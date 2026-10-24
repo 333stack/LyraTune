@@ -1,6 +1,6 @@
 # Lyra Tune — Documentation
 
-**Version 0.1.0** · Real-time automatic vocal pitch correction · VST3 (Windows x64)
+**Version 0.2.0** · Real-time automatic vocal pitch correction · VST3 (Windows x64)
 
 Lead design and engineering: **stack**
 Development assistance: Claude (AI assistant)
@@ -60,7 +60,9 @@ Status levels: **Implemented** (code exists) · **Unit-tested** · **Measured** 
 | Octave-error protection | Unit-tested, measured |
 | Key / scale: Chromatic, Major, Minor, Custom (per-note) | Unit-tested, host-tested |
 | Root note, reference pitch (420–460 Hz) | Unit-tested |
-| Speed (−3 … 400 ms) incl. aggressive negative range | Unit-tested, host-tested |
+| Speed (−3 … 400 ms) incl. aggressive negative range, 0 ms detent | Unit-tested, host-tested |
+| Note Stabilizer (None / Short / Mid / Long), zero added latency | Unit-tested, measured |
+| Sustain (−100 … +100, note-age-dependent speed) | Unit-tested |
 | Amount (0–100 %) | Unit-tested, host-tested |
 | Range (Low / Mid / High) — sets latency | Unit-tested, measured |
 | Low-latency pitch shifter, latency reported to host | Unit-tested, measured, host-tested |
@@ -69,7 +71,7 @@ Status levels: **Implemented** (code exists) · **Unit-tested** · **Measured** 
 | Undo / Redo, Reset All, A/B snapshots | Implemented |
 | GUI scaling 75–150 %, tooltips | Implemented |
 | Versioned state save/restore | Implemented (project reload not yet verified in a host) |
-| Sustain, Note Stabilizer, Doubler, presets, groups, reference tone | Planned (§15) |
+| Doubler, presets, groups, reference tone | Planned (§15) |
 
 ---
 
@@ -84,6 +86,8 @@ Insert Lyra Tune on a **dry, monophonic** vocal track (before reverb, delay or d
    lead vocals (anything above ~150 Hz, roughly D3).
 3. Turn **Speed** clockwise for a harder tune, counter-clockwise for natural correction.
 4. Use **Amount** to blend how much of the correction is applied.
+5. Optional: **Note Stabilizer** (Short/Mid/Long) keeps fast runs natural; **Sustain** tightens (+) or
+   loosens (−) long held notes.
 
 ### Window layout
 
@@ -101,6 +105,8 @@ Insert Lyra Tune on a **dry, monophonic** vocal track (before reverb, delay or d
 - Core colours rotate with the output note; brightness follows the input level.
 - The grey handle is an **XY pad**: drag right for faster Speed, up for more Amount. Double-click it
   to reset both.
+- While the Note Stabilizer is confirming a new note, the centre shows it dimmed with "confirming".
+- The ring shifts toward pink as Speed goes into the aggressive range.
 - Shows **BYPASSED** when the plugin is bypassed.
 
 **Speed knob (large)** — how fast pitch is pulled to the target.
@@ -109,6 +115,13 @@ Insert Lyra Tune on a **dry, monophonic** vocal track (before reverb, delay or d
 - `0 ms`: instant correction.
 - `0 … −3 ms`: aggressive mode — instant, and the note-change hysteresis shrinks to zero at −3 ms,
   so notes snap the moment the voice crosses the midpoint.
+- A notch marks **0 ms**; drags snap to it within ±0.4 ms. Past it the knob "overloads": the
+  negative zone runs red-hot and flickers, a glow pulses behind the dial, and a shockwave fires as
+  you cross zero — stronger the deeper you go.
+
+**Sustain knob (small, left)** — changes Speed as a note is held. `+` retunes long notes faster
+(up to 8× after 0.5 s), `−` lets them drift more naturally (up to 8× slower). The arc fills from the
+centre. No effect when Speed is 0 or below (already instant).
 
 **Amount knob (small)** — 0 % leaves pitch untouched; 100 % applies the full correction.
 
@@ -117,8 +130,10 @@ Knob gestures: drag up/down or left/right · **Shift**-drag = fine · **double-c
 
 **Mode row**
 - **Scale**: Chromatic · Major · Minor · Custom (Custom uses the notes enabled on the keyboard).
-- **Range**: Low (70 Hz) · Mid (100 Hz) · High (150 Hz) — the lowest pitch tracked. The added
-  latency is shown live next to it. Notes below the floor are left uncorrected.
+- **Stabilizer**: None · Short (40 ms) · Mid (80 ms) · Long (200 ms) — a new note must last this
+  long before it is tuned; shorter notes, runs and scoops pass naturally. Adds **no** latency.
+- **Range**: Low (70 Hz) · Mid (100 Hz) · High (150 Hz) — the lowest pitch tracked. Notes below the
+  floor are left uncorrected. The added latency is shown live at the bottom-left of the main panel.
 
 **Keyboard area**
 - **Input / Output HeatMaps**: recent detected pitch (top) and corrected pitch (bottom) across one
@@ -138,7 +153,9 @@ again to close the menu.
 
 ### Tips
 - Keep the input dry and monophonic; reverb and harmonies confuse any pitch detector.
-- For a hard-tuned effect: Speed 0 to −3 ms, Amount 100 %, correct key.
+- For a hard-tuned effect: Speed 0 to −3 ms, Amount 100 %, correct key. Add Stabilizer Short or
+  Mid so fast runs don't flip between notes.
+- For "natural start, locked finish": Speed 40–80 ms with Sustain +50 or more.
 - For transparent correction: Speed 30–80 ms, Amount 70–100 %.
 - Change **Range** while playback is stopped: it changes the reported latency.
 
@@ -157,6 +174,8 @@ Parameter IDs are stable and must never be renamed — saved projects and automa
 | `scale` | Scale | Chromatic, Major, Minor, Custom | Chromatic | yes |
 | `note0` … `note11` | Note C … Note B | off / on | on | yes |
 | `refHz` | Reference | 420 … 460 Hz | 440 Hz | yes |
+| `stabilizer` | Note Stabilizer | None, Short (40 ms), Mid (80 ms), Long (200 ms) | None | yes |
+| `sustain` | Sustain | −100 … +100 | 0 | yes |
 | `range` | Range | Low (70 Hz), Mid (100 Hz), High (150 Hz) | Low | **no** — it changes latency |
 
 Display preferences (HeatMaps, Detected Notes, tooltips, window size) are saved with the project but
@@ -245,6 +264,19 @@ buffer size.
 - Speed ≤ 0 never reaches the exponential: 0 → instant; −3…0 → instant plus reduced hysteresis.
 - Unvoiced or low-confidence (< 0.70) frames release the correction to zero with
   `max(Speed, 20 ms)`.
+
+**Note Stabilizer** (causal, zero added latency). When the selected note differs from the confirmed
+target it becomes a *candidate*. While unconfirmed, the correction releases toward zero, so the
+natural pitch passes. After the candidate persists for the threshold (40 / 80 / 200 ms) it is
+confirmed and tuned. A note starting after ≥ 60 ms of unvoiced input is confirmed immediately, so
+only note-to-note transitions wait; short consonant gaps inside a phrase keep the stabilizer engaged.
+A lookahead design would delay all audio by the threshold; this one never delays anything, so it stays
+available at every Range setting.
+
+**Sustain** tracks the age of the confirmed note and scales Speed's time constant:
+`T_eff = T · 2^(−3 · sustain · min(1, age / 0.5 s))` with sustain in −1…1. At +100 a note held for
+0.5 s retunes 8× faster; at −100, 8× slower. Parameter changes act through the one-pole smoother, so
+they never click.
 
 ### 6.4 Pitch shifting — `PitchShifter`
 - Variable-speed delay-line read head (4-point Hermite interpolation). The read head advances
@@ -366,7 +398,7 @@ A native Linux VST3 is a different binary and will not load in a Windows DAW run
 
 ## 12. Testing and measurements
 
-### Automated tests (`scripts/test.sh`) — 26 tests, all passing; ASan/UBSan clean
+### Automated tests (`scripts/test.sh`) — 30 tests, all passing; ASan/UBSan clean
 - Frequency ↔ MIDI conversion, reference pitch, cents error.
 - Scale masks, transposition, nearest allowed note, ties, hysteresis, mask changes, empty mask.
 - YIN on sines 80–880 Hz at 44.1 / 48 / 88.2 / 96 / 192 kHz: max error < 3 cents, > 99 % voiced.
@@ -378,6 +410,11 @@ A native Linux VST3 is a different binary and will not load in a Windows DAW run
   no splice discontinuities on pure tones; mean delay = reported latency for all Ranges.
 - Correction: Amount scaling, Speed time constant (63.2 % after one time constant), negative Speed,
   invalid values, unvoiced release.
+- Note Stabilizer: excursions shorter than the threshold never retarget; confirmation lands at
+  40 / 80 / 200 ms (± one 2 ms hop); onsets after silence are immediate; a 20 ms consonant gap keeps
+  the stabilizer engaged.
+- Sustain: measured time constant after a 1 s hold at Speed 80 ms: 80 ms (0), 10 ms (+100),
+  640 ms (−100); Speed 0 stays instant.
 - End to end: a tone 35 cents sharp is corrected to within 0.04 cents.
 - Full chain: zero heap allocations while switching bypass/Range/Speed; no clicks (max sample step
   equals the input's own).
@@ -391,6 +428,18 @@ Measured with `Tools/analyze_vocal` on the plugin's own output (Range High, C ma
 | Speed 60 ms | 13.7 c | 39.6 c | 39 % | 87 % |
 | Speed 20 ms | 9.1 c | 36.1 c | 53 % | 91 % |
 | Speed 0 ms | 1.6 c | 15.1 c | 85 % | 98 % |
+
+Note Stabilizer on the same vocal (Speed 0, Range High, C major):
+
+| Stabilizer | Target changes / min | 90th-percentile error |
+|---|---|---|
+| None | 763 | 15 c |
+| Short (40 ms) | 293 | 30 c |
+| Mid (80 ms) | 192 | 33 c |
+| Long (200 ms) | 202 | 38 c |
+
+Fewer target changes means less note-flipping on fast runs; the higher error is by design
+(unconfirmed notes are left natural). The default is None.
 
 - End-aligning the detector window cut the Speed-0 90th percentile from 28.8 to 14.7 cents with no
   added latency.
@@ -419,7 +468,8 @@ change, automation of every parameter, multiple instances, window resizing insid
 ffmpeg -v error -i vocal.wav -ac 1 -f f32le - | build/tests/analyze_vocal 48000 150
 ffmpeg -v error -i vocal.wav -ac 2 -f f32le - | build/tests/render_tuner 48000 0 100 0 1 2 \
   | ffmpeg -v error -f f32le -ar 48000 -ac 2 -i - out.wav
-# render_tuner args: sampleRate speedMs amount% root(0=C) scale(0 chrom,1 maj,2 min) range(0 low,1 mid,2 high) [refHz]
+# render_tuner args: sampleRate speedMs amount% root(0=C) scale(0 chrom,1 maj,2 min) range(0 low,1 mid,2 high)
+#                   [refHz] [stabilizerMs] [sustain -100..100]   (stderr: target changes/min, stabilizer holds)
 ```
 
 ---
@@ -463,18 +513,25 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 
 ## 15. Roadmap
 
-1. **Note Stabilizer** (Short / Mid / Long: 40 / 80 / 200 ms) — candidate-note confirmation so short
-   transient notes don't retarget.
-2. **Sustain** — retune speed that depends on note age.
-3. **Doubler** — two derived voices with small pitch/timing offsets, width and blend.
-4. **Presets** — factory and user presets, folders, "keep my scale".
-5. **Reference tone** — notes and chords at the reference pitch.
-6. **Groups** — shared settings across instances.
-7. High-quality mode (small lookahead), formant preservation, pitch-history view.
+1. **Doubler** — two derived voices with small pitch/timing offsets, width and blend.
+2. **Presets** — factory and user presets, folders, "keep my scale".
+3. **Reference tone** — notes and chords at the reference pitch.
+4. **Groups** — shared settings across instances.
+5. High-quality mode (small lookahead), formant preservation, pitch-history view.
 
 ---
 
 ## 16. Changelog
+
+### 0.2.0 — 2026-10-23
+- **Note Stabilizer** (None / Short 40 ms / Mid 80 ms / Long 200 ms): new notes must hold before they
+  are tuned; runs, grace notes and scoops stay natural. Zero added latency.
+- **Sustain** (−100 … +100): retune speed follows note age — tighten or loosen held notes.
+- Speed knob: definitive **0 ms** notch with snap, and an animated "overload" state in the aggressive
+  range; the orb ring heats up to match.
+- Orb shows notes awaiting stabilizer confirmation.
+- Latency readout moved to the main panel; shorter tooltips.
+- 30 automated tests.
 
 ### 0.1.0 — 2026-10-23
 First release.

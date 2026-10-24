@@ -48,13 +48,13 @@ private:
     LyraLookAndFeel lnf;
     Canvas canvas { *this };
 
-    Knob speedKnob, amountKnob;
+    Knob speedKnob, amountKnob, sustainKnob;
     ValueStrip refStrip;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> speedAttach, amountAttach, refAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> speedAttach, amountAttach, sustainAttach, refAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttach;
     Orb orb;
     KeyboardPanel keyboard;
-    SegmentedControl scaleSeg, rangeSeg;
+    SegmentedControl scaleSeg, stabilizerSeg, rangeSeg;
 
     IconButton menuButton { "menu", icons::menu() };
     IconButton undoButton { "undo", icons::undo() }, redoButton { "redo", icons::redo() }, resetButton { "reset", icons::reset() };

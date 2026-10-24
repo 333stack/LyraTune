@@ -2,7 +2,9 @@
 // stdin/stdout: raw float32 interleaved stereo. Example:
 //   ffmpeg -v error -i in.wav -ac 2 -f f32le - | build/tests/render_tuner 48000 0 100 0 1 2 \
 //     | ffmpeg -v error -f f32le -ar 48000 -ac 2 -i - out.wav
-// args: sampleRate speedMs amount% root(0=C..11) scale(0 chromatic,1 major,2 minor) range(0 low,1 mid,2 high) [refHz]
+// args: sampleRate speedMs amount% root(0=C..11) scale(0 chromatic,1 major,2 minor) range(0 low,1 mid,2 high)
+//       [refHz] [stabilizerMs] [sustain -100..100]
+// stderr reports target-note changes per minute and stabilizer holds (from the chain's telemetry).
 // Output is shifted earlier by the reported latency so it lines up with the input file.
 #include "TunerChain.h"
 #include "Pitch/Scale.h"
@@ -23,6 +25,20 @@ int main (int argc, char** argv)
     s.correction.mask = lyra::scaleMask (lyra::ScaleType (std::atoi (argv[5]) % 3), std::atoi (argv[4]));
     s.minFreq = rangeHz[std::atoi (argv[6]) % 3];
     if (argc > 7) s.correction.referenceHz = std::atof (argv[7]);
+    if (argc > 8) s.correction.stabilizerMs = std::atof (argv[8]);
+    if (argc > 9) s.correction.sustain = std::atof (argv[9]) / 100.0;
+    static lyra::TelemetryQueue telemetry; // static: large, keep off the stack
+    chain.setTelemetryQueue (&telemetry);
+    long switches = 0, holds = 0, voicedHops = 0;
+    int lastTarget = -1, lastPending = -1;
+    auto drain = [&] {
+        lyra::Telemetry t;
+        while (telemetry.pop (t))
+        {
+            if (t.target >= 0) { ++voicedHops; if (lastTarget >= 0 && t.target != lastTarget) ++switches; lastTarget = t.target; }
+            if (t.pending >= 0 && t.pending != lastPending) ++holds;
+            lastPending = t.pending;
+        } };
     chain.setSettings (s);
     chain.reset(); // apply the range without a dry-delay crossfade at t=0
     const int latency = chain.latencySamples();
@@ -43,8 +59,11 @@ int main (int argc, char** argv)
         for (int i = 0; i < n; ++i) { l[size_t (i)] = inter[size_t (2 * i)]; r[size_t (i)] = inter[size_t (2 * i + 1)]; }
         float* io[2] { l.data(), r.data() };
         chain.process (io, 2, n);
+        drain();
         emit (n);
     }
+    std::fprintf (stderr, "target changes %.1f/min of corrected audio, stabilizer holds %ld\n",
+                  voicedHops ? switches * 60.0 / (voicedHops * 0.002) : 0.0, holds);
     // Flush the tail so output length matches input.
     std::fill (l.begin(), l.end(), 0.0f); std::fill (r.begin(), r.end(), 0.0f);
     for (int left = latency; left > 0; left -= B)

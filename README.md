@@ -13,7 +13,9 @@ LyraTune is a real-time pitch-correction plugin designed to deliver responsive v
 - **Honest latency reporting:** 3.6 ms / 5.3 ms / 7.4 ms of added latency at 48 kHz across High, Mid, and Low quality ranges, respectively.
 - **Host delay compensation:** Reports plugin latency to the host for proper plugin delay compensation (PDC).
 - **Adjustable tuning behavior:** Fine-tune correction speed and amount for everything from natural vocals to robotic effects.
-- **Aggressive tuning:** Supports correction speeds down to -3 ms for an especially immediate, hard-tuned sound.
+- **Aggressive tuning:** Supports correction speeds down to -3 ms for an especially immediate, hard-tuned sound — the Speed knob has a definitive 0 ms notch and visibly "overloads" past it.
+- **Note Stabilizer:** Short / Mid / Long confirmation so fast runs and grace notes stay natural — with zero added latency.
+- **Sustain:** Retune speed follows note age to tighten or loosen held notes.
 
 ### 🎵 Accurate Pitch Detection
 - **YIN-based pitch detection** for real-time vocal pitch tracking.
@@ -63,7 +65,7 @@ LyraTune is a real-time pitch-correction plugin designed to deliver responsive v
 
 ## Download & Install
 
-Get `LyraTune-0.1.0-win-x64-vst3.zip` from the [Releases](https://github.com/333stack/LyraTune/releases) page.
+Get `LyraTune-0.2.0-win-x64-vst3.zip` from the [Releases](https://github.com/333stack/LyraTune/releases) page.
 
 - **Windows:** unzip and copy the `Lyra Tune.vst3` folder to `C:\Program Files\Common Files\VST3\`, then rescan plugins in your DAW.
 - **Linux (Windows DAW under Wine):** copy it to the same folder inside the DAW's Wine prefix:

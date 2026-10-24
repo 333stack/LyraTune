@@ -10,7 +10,7 @@ void TunerChain::prepare (double sampleRate, double lowestMinFreq)
     YinDetector::Config cfg;
     cfg.minFreq = lowestMinFreq;
     yin.prepare (sr, cfg);
-    engine.prepare (sr);
+    engine.prepare (sr, yin.hopSamples() / sr);
     shifter.prepare (sr, kMaxChannels, lowestMinFreq);
     // Sized for the largest latency; the active delay follows the shifter centre (see setSettings).
     dryDelay.prepare (kMaxChannels, shifter.latencySamples(), int (0.005 * sr));
@@ -77,6 +77,7 @@ void TunerChain::process (float* const* ch, int numCh, int total) noexcept
                 t.confidence = e.confidence;
                 t.rms = e.rms;
                 t.target = engine.targetNote();
+                t.pending = engine.pendingNote();
                 telemetry->push (t); // drops when the UI is not draining (editor closed)
             }
         });

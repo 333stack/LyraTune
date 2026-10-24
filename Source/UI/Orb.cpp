@@ -87,14 +87,16 @@ void Orb::paint (juce::Graphics& g)
     const float pres = bypassed ? 0.0f : state.presence;
     const float level = juce::jlimit (0.0f, 1.0f, state.level);
 
-    // Middle ring with glow.
+    // Middle ring with glow; shifts toward pink as Speed goes aggressive (below 0 ms).
     const float rm = R * 0.58f;
+    const float aggressive = juce::jlimit (0.0f, 1.0f, -speedParam.convertFrom0to1 (speedNorm) / 3.0f);
+    const auto ringCol = violet.interpolatedWith (pink, 0.8f * aggressive);
     for (int i = 4; i >= 1; --i)
     {
-        g.setColour (violet.withAlpha (0.05f + 0.06f * pres));
+        g.setColour (ringCol.withAlpha (0.05f + 0.06f * pres + 0.05f * aggressive));
         g.drawEllipse (c.x - rm, c.y - rm, 2 * rm, 2 * rm, float (i) * 3.5f);
     }
-    g.setColour (violet.interpolatedWith (lavender, 0.3f * pres).withAlpha (0.75f + 0.25f * pres));
+    g.setColour (ringCol.interpolatedWith (lavender, 0.3f * pres).withAlpha (0.75f + 0.25f * pres));
     g.drawEllipse (c.x - rm, c.y - rm, 2 * rm, 2 * rm, 2.0f);
 
     // Core: wedge ring whose palette rotates with the output pitch class.
@@ -141,6 +143,14 @@ void Orb::paint (juce::Graphics& g)
     {
         g.setFont (font (R * 0.11f, true));
         g.drawText ("BYPASSED", juce::Rectangle<float> (R, R * 0.3f).withCentre (c), juce::Justification::centred);
+    }
+    else if (state.pending >= 0 && pres > 0.01f) // Note Stabilizer is confirming a new note
+    {
+        g.setColour (lavender.withAlpha (0.55f * pres));
+        g.setFont (font (R * 0.16f, true));
+        g.drawText (noteName (state.pending), juce::Rectangle<float> (R, R * 0.22f).withCentre (c.translated (0, -R * 0.03f)), juce::Justification::centred);
+        g.setFont (font (R * 0.06f, true));
+        g.drawText ("confirming", juce::Rectangle<float> (R, R * 0.1f).withCentre (c.translated (0, R * 0.11f)), juce::Justification::centred);
     }
     else if (state.target >= 0 && pres > 0.01f)
     {

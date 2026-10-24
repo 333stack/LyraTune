@@ -23,7 +23,7 @@ int main (int argc, char** argv)
             if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p); rp && rp->getParameterID() == id)
                 rp->setValueNotifyingHost (rp->convertTo0to1 (v));
     };
-    if (mode == "major") { set ("root", 4); set ("scale", 1); set ("range", 2); set ("speed", -3); set ("amount", 72); }
+    if (mode == "major") { set ("root", 4); set ("scale", 1); set ("range", 2); set ("speed", -3); set ("amount", 72); set ("stabilizer", 2); set ("sustain", 35); }
     if (mode == "bypass") set ("bypass", 1);
 
     std::unique_ptr<juce::AudioProcessorEditor> ed (proc->createEditorAndMakeActive());

@@ -16,6 +16,8 @@ LyraTuneProcessor::LyraTuneProcessor()
     pScale = apvts.getRawParameterValue (ParamID::scale);
     pRef = apvts.getRawParameterValue (ParamID::referenceHz);
     pRange = apvts.getRawParameterValue (ParamID::range);
+    pStabilizer = apvts.getRawParameterValue (ParamID::stabilizer);
+    pSustain = apvts.getRawParameterValue (ParamID::sustain);
     for (int pc = 0; pc < 12; ++pc)
         pNotes[pc] = apvts.getRawParameterValue (ParamID::note (pc));
     chain.setTelemetryQueue (&telemetry);
@@ -62,6 +64,8 @@ void LyraTuneProcessor::process (juce::AudioBuffer<float>& buffer, bool forceByp
     s.correction.amount = pAmount->load() / 100.0;
     s.correction.referenceHz = pRef->load();
     s.correction.mask = currentMask();
+    s.correction.stabilizerMs = stabilizerMs (pStabilizer->load());
+    s.correction.sustain = pSustain->load() / 100.0;
     s.minFreq = rangeMinHz (pRange->load());
     s.bypass = forceBypass || pBypass->load() > 0.5f;
     chain.setSettings (s);

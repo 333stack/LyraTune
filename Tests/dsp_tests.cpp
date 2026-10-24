@@ -491,6 +491,112 @@ TEST (correction_negative_speed_and_edges)
     CHECK_NEAR (r, 1.0, 1e-4);
 }
 
+
+// ---------- note stabilizer ----------
+// Feeds `seconds` of a constant pitch as 2 ms estimates; returns the last target.
+static int feed (CorrectionEngine& e, double midi, double seconds, float* lastRatio = nullptr)
+{
+    const int hops = int (std::lround (seconds / 0.002));
+    for (int i = 0; i < hops; ++i)
+    {
+        e.onEstimate (est (midiToFreq (midi)));
+        for (int k = 0; k < 96; ++k) { const float r = e.nextRatio(); if (lastRatio) *lastRatio = r; } // 2 ms of samples
+    }
+    return e.targetNote();
+}
+
+TEST (stabilizer_ignores_short_excursion)
+{
+    for (double ms : { 40.0, 80.0, 200.0 })
+    {
+        CorrectionEngine e; e.prepare (48000, 0.002);
+        CorrectionEngine::Params p; p.speedMs = 0; p.stabilizerMs = ms; e.setParams (p);
+        CHECK (feed (e, 60.1, 0.2) == 60);                // onset: confirmed immediately
+        // Excursion to D (62) shorter than the threshold: no retarget, correction released (pitch passes).
+        float r = 0;
+        CHECK (feed (e, 62.2, ms / 1000.0 * 0.5, &r) == TargetSelector::kNoTarget);
+        CHECK (e.pendingNote() == 62);
+        CHECK (feed (e, 60.1, 0.05) == 60);               // back on C: old target, no D ever confirmed
+        CHECK (e.pendingNote() == TargetSelector::kNoTarget);
+    }
+}
+
+TEST (stabilizer_confirms_after_threshold)
+{
+    for (double ms : { 40.0, 80.0, 200.0 })
+    {
+        CorrectionEngine e; e.prepare (48000, 0.002);
+        CorrectionEngine::Params p; p.speedMs = 0; p.stabilizerMs = ms; e.setParams (p);
+        feed (e, 60.1, 0.2);
+        // Count hops until 62 is confirmed: must be the threshold (+- one hop).
+        int hops = 0;
+        while (feed (e, 62.2, 0.002) != 62 && hops < 1000) ++hops;
+        CHECK_NEAR ((hops + 1) * 2.0, ms, 2.0);
+        float r = 0; feed (e, 62.2, 0.002, &r);
+        CHECK_NEAR (1200.0 * std::log2 (double (r)), -20.0, 1e-3); // fully corrected once confirmed
+    }
+    // Off: retargets on the first estimate.
+    CorrectionEngine e; e.prepare (48000, 0.002);
+    CorrectionEngine::Params p; p.speedMs = 0; e.setParams (p);
+    feed (e, 60.1, 0.1);
+    CHECK (feed (e, 62.2, 0.002) == 62);
+}
+
+TEST (stabilizer_onset_after_silence_is_immediate)
+{
+    CorrectionEngine e; e.prepare (48000, 0.002);
+    CorrectionEngine::Params p; p.speedMs = 0; p.stabilizerMs = 200; e.setParams (p);
+    feed (e, 60.1, 0.2);
+    for (int i = 0; i < 40; ++i) e.onEstimate ({ 0, 0, false }); // 80 ms gap > 60 ms onset gap
+    CHECK (feed (e, 64.2, 0.002) == 64);
+    // A short unvoiced gap (consonant) inside a phrase keeps the stabilizer engaged.
+    for (int i = 0; i < 10; ++i) e.onEstimate ({ 0, 0, false }); // 20 ms
+    CHECK (feed (e, 67.1, 0.002) == TargetSelector::kNoTarget);
+    CHECK (e.pendingNote() == 67);
+}
+
+// ---------- sustain ----------
+// Time for the correction to reach 63.2 % of a step applied after the note has been held `hold` s.
+static double timeConstantAfterHold (double speedMs, double sustain, double hold)
+{
+    const double sr = 48000;
+    CorrectionEngine e; e.prepare (sr, 0.002);
+    CorrectionEngine::Params p; p.speedMs = speedMs; p.sustain = sustain; e.setParams (p);
+    feed (e, 60.0, hold); // hold the note exactly in tune (no correction needed)
+    // Step: same note, now 40 c sharp. Count samples until 63.2 %.
+    int n = 0; double cents = 0;
+    for (int hop = 0; hop < 5000 && cents > -40.0 * (1.0 - std::exp (-1.0)); ++hop)
+    {
+        e.onEstimate (est (midiToFreq (60.4)));
+        for (int k = 0; k < 96 && cents > -40.0 * (1.0 - std::exp (-1.0)); ++k, ++n)
+            cents = 1200.0 * std::log2 (double (e.nextRatio()));
+    }
+    return 1000.0 * n / sr;
+}
+
+TEST (sustain_scales_speed_with_note_age)
+{
+    const double base = timeConstantAfterHold (80, 0.0, 1.0);
+    const double fast = timeConstantAfterHold (80, 1.0, 1.0);
+    const double slow = timeConstantAfterHold (80, -1.0, 1.0);
+    std::printf ("  tau after 1 s hold: sustain 0 %.1f ms, +100 %.1f ms, -100 %.1f ms\n", base, fast, slow);
+    CHECK_NEAR (base, 80.0, 3.0);
+    CHECK_NEAR (fast, 10.0, 2.5);   // 80 / 8
+    CHECK_NEAR (slow, 640.0, 25.0); // 80 * 8
+    // Young note (just started): sustain has barely any effect yet.
+    CHECK_NEAR (timeConstantAfterHold (80, 1.0, 0.0), 80.0, 25.0);
+    // Speed 0 stays instant whatever the sustain.
+    CorrectionEngine e; e.prepare (48000, 0.002);
+    CorrectionEngine::Params p; p.speedMs = 0; p.sustain = -1; e.setParams (p);
+    feed (e, 60.0, 1.0);
+    e.onEstimate (est (midiToFreq (60.3)));
+    CHECK_NEAR (1200.0 * std::log2 (double (e.nextRatio())), -30.0, 1e-3);
+    // Invalid values are clamped, never NaN.
+    p.speedMs = 50; p.sustain = std::numeric_limits<double>::quiet_NaN(); p.stabilizerMs = -5; e.setParams (p);
+    feed (e, 61.3, 0.1);
+    CHECK (std::isfinite (e.nextRatio()));
+}
+
 TEST (end_to_end_correction)
 {
     // Detuned harmonic tone (A3 + 35 c) through detector -> engine -> shifter at speed 0: output ~A3.
@@ -532,6 +638,7 @@ TEST (chain_rt_no_alloc_and_switching)
         s.bypass = (b / 40) % 2 == 1;                  // toggle bypass every ~53 ms
         s.minFreq = (b / 100) % 2 ? 150.0 : 100.0;     // switch range every ~133 ms
         if (b == 300) s.correction.speedMs = -3;
+        if (b == 500) { s.correction.stabilizerMs = 80; s.correction.sustain = 0.7; s.correction.speedMs = 30; }
         chain.setSettings (s);
         float* io[2] { L.data() + n, R.data() + n };
         chain.process (io, 2, 64);

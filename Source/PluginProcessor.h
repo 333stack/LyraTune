@@ -67,6 +67,8 @@ private:
     std::atomic<float>* pScale = nullptr;
     std::atomic<float>* pRef = nullptr;
     std::atomic<float>* pRange = nullptr;
+    std::atomic<float>* pStabilizer = nullptr;
+    std::atomic<float>* pSustain = nullptr;
     std::atomic<float>* pNotes[12] {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LyraTuneProcessor)

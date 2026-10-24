@@ -16,14 +16,16 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     : AudioProcessorEditor (p), proc (p), state (p.apvts),
       speedKnob ("Speed", "ms", formatSpeed, true),
       amountKnob ("Amount", "%", [] (double v) { return juce::String (juce::roundToInt (v)); }),
+      sustainKnob ("Sustain", {}, [] (double v) { const int i = juce::roundToInt (v); return (i > 0 ? "+" : "") + juce::String (i); }),
       orb (*state.getParameter (ParamID::speed), *state.getParameter (ParamID::amount), &p.undoManager),
       scaleSeg (*state.getParameter (ParamID::scale), { "Chromatic", "Major", "Minor", "Custom" }, &p.undoManager),
+      stabilizerSeg (*state.getParameter (ParamID::stabilizer), kStabilizerNames, &p.undoManager),
       rangeSeg (*state.getParameter (ParamID::range), { "Low", "Mid", "High" }, &p.undoManager)
 {
     setLookAndFeel (&lnf);
     addAndMakeVisible (canvas);
 
-    for (auto* c : std::initializer_list<juce::Component*> { &orb, &speedKnob, &amountKnob, &scaleSeg, &rangeSeg, &keyboard, &refStrip,
+    for (auto* c : std::initializer_list<juce::Component*> { &orb, &speedKnob, &amountKnob, &sustainKnob, &scaleSeg, &stabilizerSeg, &rangeSeg, &keyboard, &refStrip,
                                                             &menuButton, &undoButton, &redoButton, &resetButton, &aButton, &copyButton, &bButton,
                                                             &helpButton, &heatButton, &detectedButton, &bypassButton, &credit })
         canvas.addAndMakeVisible (c);
@@ -31,10 +33,15 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
     speedAttach = std::make_unique<SA> (state, ParamID::speed, speedKnob);
     amountAttach = std::make_unique<SA> (state, ParamID::amount, amountKnob);
+    sustainAttach = std::make_unique<SA> (state, ParamID::sustain, sustainKnob);
+    sustainKnob.setBipolar (true);
+    sustainKnob.setDoubleClickReturnValue (true, 0.0);
     refAttach = std::make_unique<SA> (state, ParamID::referenceHz, refStrip);
     bypassButton.setClickingTogglesState (true);
     bypassButton.onColour = theme::pink;
     bypassAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (state, ParamID::bypass, bypassButton);
+    speedKnob.setOverloadDetent (0.0, 0.4); // 0 ms notch; below it = aggressive mode, knob "overloads"
+    speedKnob.setGlowMargin (22.0f);
     for (auto* k : { &speedKnob, &amountKnob })
         k->setDoubleClickReturnValue (true, k == &speedKnob ? 20.0 : 100.0);
     refStrip.setDoubleClickReturnValue (true, 440.0);
@@ -65,24 +72,25 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     keyboard.setShowHeat (proc.ui.heatmaps);
     keyboard.setShowDetected (proc.ui.detectedNotes);
 
-    speedKnob.setTooltip ("Speed: how fast pitch is pulled to the target. Turn clockwise for a harder tune; "
-                          "counter-clockwise is slower and more natural. Below 0 ms (down to -3) = aggressive mode with no note hysteresis. Shift-drag for fine, double-click to reset, right-click to type.");
-    amountKnob.setTooltip ("Amount: how much of the correction is applied. 0 % leaves pitch untouched.");
-    orb.setTooltip ("Live pitch view. Arc = correction from detected to tuned pitch. Drag the dot: right = faster Speed, up = more Amount.");
-    keyboard.setTooltip ("Click a note to allow/forbid it (switches to Custom). Right-click a note to make it the root.");
-    scaleSeg.setTooltip ("Scale type for the selected root. Custom uses the notes you enable on the keyboard.");
-    rangeSeg.setTooltip ("Lowest note the tuner tracks. Higher = lower latency. Low 70 Hz, Mid 100 Hz, High 150 Hz.");
-    refStrip.setTooltip ("Reference tuning for A4. Drag, Shift-drag for fine, double-click for 440 Hz.");
+    speedKnob.setTooltip ("Retune speed. Clockwise = harder. Below 0 = aggressive.");
+    amountKnob.setTooltip ("How much correction is applied.");
+    sustainKnob.setTooltip ("+ tightens held notes, - lets them breathe.");
+    stabilizerSeg.setTooltip ("New notes must hold this long before tuning. No added latency.");
+    orb.setTooltip ("Live pitch. Drag the dot: right = faster, up = more amount.");
+    keyboard.setTooltip ("Click: toggle note. Right-click: set root.");
+    scaleSeg.setTooltip ("Scale for the root note.");
+    rangeSeg.setTooltip ("Lowest note tracked. Higher = less latency.");
+    refStrip.setTooltip ("A4 reference. Double-click: 440 Hz.");
     undoButton.setTooltip ("Undo");
     redoButton.setTooltip ("Redo");
-    resetButton.setTooltip ("Reset all parameters to defaults (undoable)");
+    resetButton.setTooltip ("Reset all");
     aButton.setTooltip ("Snapshot A");
     bButton.setTooltip ("Snapshot B");
-    copyButton.setTooltip ("Copy the current snapshot to the other one");
-    helpButton.setTooltip ("Show/hide tooltips");
-    heatButton.setTooltip ("Show/hide the input and output HeatMaps");
-    detectedButton.setTooltip ("Show/hide detected input note and output target on the keyboard");
-    bypassButton.setTooltip ("Bypass all processing (latency stays compensated)");
+    copyButton.setTooltip ("Copy to other snapshot");
+    helpButton.setTooltip ("Tooltips on/off");
+    heatButton.setTooltip ("Show HeatMaps");
+    detectedButton.setTooltip ("Show detected notes");
+    bypassButton.setTooltip ("Bypass");
     menuButton.setTooltip ("Settings");
 
     updateTooltips();
@@ -132,11 +140,13 @@ void LyraTuneEditor::layout()
     helpButton.setBounds (858, 8, 28, 28);
 
     orb.setBounds (juce::Rectangle<int> (310, 310).withCentre ({ 278, 208 }));
-    speedKnob.setBounds (juce::Rectangle<int> (204, 204).withCentre ({ 736, 160 }));
+    speedKnob.setBounds (juce::Rectangle<int> (248, 248).withCentre ({ 736, 160 })); // 204 dial + 22 glow margin
     amountKnob.setBounds (juce::Rectangle<int> (112, 112).withCentre ({ 818, 306 }));
+    sustainKnob.setBounds (juce::Rectangle<int> (98, 98).withCentre ({ 652, 312 }));
 
-    scaleSeg.setBounds (78, rowY + 6, 300, rowH - 12);
-    rangeSeg.setBounds (500, rowY + 6, 180, rowH - 12);
+    scaleSeg.setBounds (60, rowY + 6, 264, rowH - 12);
+    stabilizerSeg.setBounds (408, rowY + 6, 212, rowH - 12);
+    rangeSeg.setBounds (682, rowY + 6, 204, rowH - 12);
 
     keyboard.setBounds (keysX, keysY, keysW, keysBottom - keysY);
     rootArea = { 12, 470, 136, 116 };
@@ -197,10 +207,15 @@ void LyraTuneEditor::Canvas::paint (juce::Graphics& g)
     g.fillRect (0, rowY + rowH - 1, kW, 1);
     g.setColour (textDim);
     g.setFont (font (12.0f, true));
-    g.drawText ("Scale", 16, rowY, 56, rowH, juce::Justification::centredLeft);
-    g.drawText ("Range", 438, rowY, 56, rowH, juce::Justification::centredLeft);
+    g.drawText ("Scale", 14, rowY, 44, rowH, juce::Justification::centredLeft);
+    g.drawText ("Stabilizer", 336, rowY, 70, rowH, juce::Justification::centredLeft);
+    g.drawText ("Range", 634, rowY, 46, rowH, juce::Justification::centredLeft);
+    // Latency readout lives in the main panel, bottom-left (latency-sensitive setting: keep it visible).
+    g.setColour (textDim);
+    g.drawText ("LATENCY", 18, rowY - 30, 60, 18, juce::Justification::centredLeft);
     g.setColour (lavender);
-    g.drawText (e.latencyText, 692, rowY, 196, rowH, juce::Justification::centredLeft);
+    g.setFont (font (13.0f, true));
+    g.drawText (e.latencyText, 78, rowY - 30, 200, 18, juce::Justification::centredLeft);
 
     // Bottom left column.
     g.setColour (bg2);
@@ -246,6 +261,7 @@ void LyraTuneEditor::timerCallback()
             display.inputMidi = t.inputMidi;
             display.outputMidi = out;
             display.target = bypassed ? -1 : t.target;
+            display.pending = bypassed ? -1 : t.pending;
             lastVoicedMs = now;
         }
     }
@@ -266,8 +282,8 @@ void LyraTuneEditor::timerCallback()
     copyButton.setTooltip (proc.getABSlot() == 0 ? "Copy A to B" : "Copy B to A");
 
     const int range = juce::jlimit (0, 2, int (state.getRawParameterValue (ParamID::range)->load()));
-    const auto lat = juce::String (proc.latencyMsFor (range), 1) + " ms added latency";
-    if (lat != latencyText) { latencyText = lat; canvas.repaint (0, layout::rowY, kW, layout::rowH); }
+    const auto lat = juce::String (proc.latencyMsFor (range), 1) + " ms added";
+    if (lat != latencyText) { latencyText = lat; canvas.repaint (0, layout::rowY - 32, 300, 22); }
     canvas.repaint (0, layout::keysY + 40, layout::keysX, kH - layout::keysY - 40); // root letter / scale name
 }
 

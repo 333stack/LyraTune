@@ -11,6 +11,8 @@ inline constexpr auto root = "root";
 inline constexpr auto scale = "scale";
 inline constexpr auto referenceHz = "refHz";
 inline constexpr auto range = "range";
+inline constexpr auto stabilizer = "stabilizer";
+inline constexpr auto sustain = "sustain";
 inline juce::String note (int pitchClass) { return "note" + juce::String (pitchClass); } // note0 (C) .. note11 (B)
 }
 
@@ -24,6 +26,11 @@ inline const juce::StringArray kScaleNames { "Chromatic", "Major", "Minor", "Cus
 inline const juce::StringArray kRangeNames { "Low (70 Hz)", "Mid (100 Hz)", "High (150 Hz)" };
 inline constexpr double kRangeMinHz[] { 70.0, 100.0, 150.0 };
 inline double rangeMinHz (float index) { return kRangeMinHz[juce::jlimit (0, 2, int (index))]; }
+
+// Note Stabilizer: confirmation time before a new note is tuned (0 = off). Adds no latency.
+inline const juce::StringArray kStabilizerNames { "None", "Short", "Mid", "Long" };
+inline constexpr double kStabilizerMs[] { 0.0, 40.0, 80.0, 200.0 };
+inline double stabilizerMs (float index) { return kStabilizerMs[juce::jlimit (0, 3, int (index))]; }
 
 inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 {
@@ -55,6 +62,12 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         NormalisableRange<float> (420.0f, 460.0f, 0.1f), 440.0f,
         AudioParameterFloatAttributes().withLabel ("Hz").withStringFromValueFunction (
             [] (float x, int) { return String (x, 1) + " Hz"; })));
+
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::stabilizer, 3 }, "Note Stabilizer", kStabilizerNames, 0));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::sustain, 3 }, "Sustain",
+        NormalisableRange<float> (-100.0f, 100.0f, 1.0f), 0.0f,
+        AudioParameterFloatAttributes().withStringFromValueFunction (
+            [] (float x, int) { return (x > 0.5f ? "+" : "") + String (roundToInt (x)); })));
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::range, v }, "Range", kRangeNames, 0,
         AudioParameterChoiceAttributes().withAutomatable (false)));
