@@ -115,8 +115,8 @@ Insert Lyra Tune on a **dry, monophonic** vocal track (before reverb, delay or d
 - Clockwise = faster/harder. The arc fills as the setting becomes more aggressive.
 - `400 … 0 ms`: smoothing time constant. Slow settings keep vibrato and natural movement.
 - `0 ms`: instant correction.
-- `0 … −3 ms`: aggressive mode — instant, and the note-change hysteresis shrinks to zero at −3 ms,
-  so notes snap the moment the voice crosses the midpoint.
+- `0 … −3 ms`: aggressive mode — instant, plus an overshoot on each note-to-note change: the output
+  lands up to 20 % of the interval past the new note (at −3 ms, max ±1 st) and settles over ~100 ms.
 - A notch marks **0 ms**; drags snap to it within ±0.4 ms. Past it the knob "overloads": the
   negative zone runs red-hot and flickers, a glow pulses behind the dial, and a shockwave fires as
   you cross zero — stronger the deeper you go.
@@ -259,7 +259,7 @@ buffer size.
   twelve note parameters).
 - Nearest allowed note wins; exact ties go to the lower note.
 - Hysteresis: the target only changes once the pitch is 15 cents **past** the midpoint between two
-  notes (shrinks to 0 in aggressive Speed). If the current target is removed from the scale it is
+  notes. If the current target is removed from the scale it is
   abandoned immediately. Empty mask → no correction.
 
 ### 6.3 Correction — `CorrectionEngine`
@@ -267,7 +267,9 @@ buffer size.
 - The **correction offset** (not the output pitch) is smoothed with a one-pole filter,
   `α = 1 − exp(−1 / (T · fs))`, `T = Speed`. Smoothing the offset lets fast natural movement such as
   vibrato pass through at slow speeds.
-- Speed ≤ 0 never reaches the exponential: 0 → instant; −3…0 → instant plus reduced hysteresis.
+- Speed ≤ 0 never reaches the exponential: 0 → instant; −3…0 → instant plus overshoot
+  `o = clamp(0.2·|Speed|/3 · ΔNote · Amount, ±1 st)` on a confirmed note change (not after silence),
+  decaying with a 100 ms time constant. β, limit and release are untuned guesses.
 - Unvoiced or low-confidence (< 0.70) frames release the correction to zero with
   `max(Speed, 20 ms)`.
 
@@ -527,6 +529,10 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 ---
 
 ## 16. Changelog
+
+### 0.4.0 — 2026-10-24
+- Negative Speed (−3…0 ms) now overshoots past each new note and settles over ~100 ms, instead of
+  shrinking the note-change hysteresis. Projects saved with negative Speed will sound different.
 
 ### 0.3.1 — 2026-10-24
 - Fix: the root-note and main menus closed immediately in some hosts running under Wine. Menus now

@@ -21,7 +21,7 @@ void CorrectionEngine::prepare (double sampleRate, double estimateIntervalSecond
 void CorrectionEngine::reset() noexcept
 {
     selector.reset();
-    desired = c = inMidi = 0;
+    desired = c = inMidi = o = 0;
     noteAge = candidateAge = 0;
     unvoicedTime = 1.0;
     active = false;
@@ -48,14 +48,16 @@ void CorrectionEngine::updateCoefficients() noexcept
 {
     baseAlpha = alpha = onePoleAlpha (p.speedMs / 1000.0, sr);
     releaseAlpha = onePoleAlpha (std::max (p.speedMs, 20.0) / 1000.0, sr);
-    const double h = p.speedMs < 0 ? p.hysteresisCents * (1.0 + p.speedMs / 3.0) : p.hysteresisCents;
-    selector.setHysteresisCents (std::max (0.0, h));
+    selector.setHysteresisCents (std::max (0.0, p.hysteresisCents));
+    overshootBeta = p.speedMs < 0 ? kOvershootMax * -p.speedMs / 3.0 : 0.0;
+    overshootDecay = std::exp (-1.0 / (kOvershootRelease * sr));
 }
 
 void CorrectionEngine::onEstimate (const PitchEstimate& e) noexcept
 {
     active = false;
     inMidi = 0;
+    const int prevConfirmed = confirmed;
     const bool voiced = e.voiced && e.confidence >= p.minConfidence && e.frequency > 0;
     if (! voiced)
     {
@@ -102,6 +104,10 @@ void CorrectionEngine::onEstimate (const PitchEstimate& e) noexcept
         noteAge += dt;
     desired = active ? (target - inMidi) * p.amount : 0.0;
 
+    // Negative Speed: kick past the new note on a note-to-note change (not an onset after silence).
+    if (overshootBeta > 0 && active && prevConfirmed != TargetSelector::kNoTarget && confirmed != prevConfirmed)
+        o = std::clamp (overshootBeta * (confirmed - prevConfirmed) * p.amount, -kOvershootLimit, kOvershootLimit);
+
     // Sustain: the held note's age shortens (+) or lengthens (-) the Speed time constant.
     alpha = baseAlpha;
     if (p.sustain != 0.0 && p.speedMs > 0.0 && active)
@@ -115,6 +121,8 @@ void CorrectionEngine::onEstimate (const PitchEstimate& e) noexcept
 float CorrectionEngine::nextRatio() noexcept
 {
     c += (active ? alpha : releaseAlpha) * (desired - c);
-    return float (std::exp2 (c / 12.0));
+    const double total = c + o;
+    o = std::abs (o) > 1e-9 ? o * overshootDecay : 0.0; // flush before it goes denormal
+    return float (std::exp2 (total / 12.0));
 }
 } // namespace lyra

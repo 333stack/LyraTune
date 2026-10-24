@@ -14,8 +14,11 @@ namespace lyra
 // Speed mapping (ms):
 //   > 0  : one-pole time constant T = speed; alpha = 1 - exp(-1 / (T * fs)).
 //   == 0 : instant (alpha = 1): correction jumps at each detector hop (2 ms).
-//   < 0  : "aggressive" (-3..0): instant, and target hysteresis shrinks linearly to 0 at -3, so
-//          the output snaps between notes like a hard-tuned effect. Negative values never reach exp().
+//   < 0  : "aggressive" (-3..0): instant, plus an overshoot on each confirmed note-to-note change:
+//          o = clamp(beta * dNote * amount, +-1 st), beta = 0.2 * |speed| / 3, then o decays with a
+//          100 ms time constant. The output lands past the new note and settles onto it. Onsets after
+//          silence do not overshoot. Negative values never reach exp().
+//          shortcut: beta/limit/release are guesses, not measured; tune them by ear or a reference render.
 //
 // Note Stabilizer (causal, adds no latency): when the selected note differs from the confirmed
 // target it becomes a candidate. While unconfirmed, the correction releases toward 0 so the natural
@@ -45,6 +48,9 @@ public:
 
     static constexpr double kSustainRampSeconds = 0.5;
     static constexpr double kOnsetGapSeconds = 0.060;
+    static constexpr double kOvershootMax = 0.2;      // fraction of the interval at -3 ms
+    static constexpr double kOvershootLimit = 1.0;    // semitones
+    static constexpr double kOvershootRelease = 0.100; // seconds
 
     // estimateInterval: time between onEstimate() calls (the detector hop).
     void prepare (double sampleRate, double estimateIntervalSeconds = 0.002);
@@ -58,7 +64,7 @@ public:
     int targetNote() const noexcept { return target; }        // TargetSelector::kNoTarget when none
     int pendingNote() const noexcept { return candidate; }    // stabilizer candidate, or kNoTarget
     double noteAgeSeconds() const noexcept { return noteAge; }
-    double correctionSemitones() const noexcept { return c; }
+    double correctionSemitones() const noexcept { return c + o; }
 
 private:
     void updateCoefficients() noexcept;
@@ -67,6 +73,7 @@ private:
     TargetSelector selector;
     double sr = 48000, dt = 0.002, baseAlpha = 1, alpha = 1, releaseAlpha = 1;
     double desired = 0, c = 0, inMidi = 0;
+    double o = 0, overshootBeta = 0, overshootDecay = 0; // negative-Speed overshoot (semitones)
     double noteAge = 0, candidateAge = 0, unvoicedTime = 1.0;
     bool active = false;
     int target = TargetSelector::kNoTarget, confirmed = TargetSelector::kNoTarget, candidate = TargetSelector::kNoTarget;

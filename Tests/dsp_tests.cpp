@@ -479,10 +479,10 @@ TEST (correction_negative_speed_and_edges)
         CHECK (std::isfinite (r));
         if (s >= -3.0 && s < 0) CHECK_NEAR (1200.0 * std::log2 (double (r)), -20.0, 1e-3); // instant
     }
-    // -3 ms: zero hysteresis -> switches as soon as the midpoint is crossed.
+    // Negative Speed keeps the normal hysteresis.
     p.speedMs = -3; e.setParams (p); e.reset();
     e.onEstimate (est (midiToFreq (60.45))); CHECK (e.targetNote() == 60);
-    e.onEstimate (est (midiToFreq (60.52))); CHECK (e.targetNote() == 61);
+    e.onEstimate (est (midiToFreq (60.52))); CHECK (e.targetNote() == 60);
     // Empty mask and unvoiced input release to ratio 1.
     p.speedMs = 0; p.mask = 0; e.setParams (p); e.reset();
     e.onEstimate (est (midiToFreq (60.3)));
@@ -494,6 +494,36 @@ TEST (correction_negative_speed_and_edges)
     CHECK_NEAR (r, 1.0, 1e-4);
 }
 
+TEST (correction_negative_speed_overshoot)
+{
+    const double sr = 48000;
+    // Returns the output pitch offset (semitones) on the first sample after jumping 60 -> `to`.
+    auto jump = [sr] (double speed, double to, double amount, bool fromSilence, double* settled = nullptr)
+    {
+        CorrectionEngine e; e.prepare (sr);
+        CorrectionEngine::Params p; p.speedMs = speed; p.amount = amount; e.setParams (p);
+        e.onEstimate (est (midiToFreq (60.0))); e.nextRatio();
+        if (fromSilence)
+            for (int i = 0; i < 40; ++i) e.onEstimate ({ 0, 0, false }); // 80 ms gap: next note is an onset
+        e.onEstimate (est (midiToFreq (to)));
+        const double first = 12.0 * std::log2 (double (e.nextRatio()));
+        if (settled)
+        {
+            float r = 1; for (int i = 0; i < int (0.5 * sr); ++i) r = e.nextRatio();
+            *settled = 12.0 * std::log2 (double (r));
+        }
+        return first;
+    };
+    double settled = 1;
+    CHECK_NEAR (jump (-3.0, 62.0, 1.0, false, &settled), 0.4, 1e-4);  // 0.2 * 2 st past D
+    CHECK_NEAR (settled, 0.4 * std::exp (-5.0), 1e-3);               // 5 release time constants later
+    CHECK_NEAR (jump (-1.5, 62.0, 1.0, false), 0.2, 1e-4);            // scales with |speed|
+    CHECK_NEAR (jump (-3.0, 58.0, 1.0, false), -0.4, 1e-4);           // downward jump overshoots down
+    CHECK_NEAR (jump (-3.0, 62.0, 0.5, false), 0.2, 1e-4);            // scaled by Amount
+    CHECK_NEAR (jump (-3.0, 72.0, 1.0, false), 1.0, 1e-4);            // octave leap clamped to 1 st
+    CHECK_NEAR (jump (0.0, 62.0, 1.0, false), 0.0, 1e-4);             // 0 ms: no overshoot
+    CHECK_NEAR (jump (-3.0, 62.0, 1.0, true), 0.0, 1e-4);             // onset after silence: none
+}
 
 // ---------- note stabilizer ----------
 // Feeds `seconds` of a constant pitch as 2 ms estimates; returns the last target.

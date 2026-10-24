@@ -1,79 +1,107 @@
+# LyraTune — Free Real-Time Vocal Pitch Correction VST3 with Negative Retune Speed
 
-# LyraTune
+**An open-source, low-latency vocal tuner plugin for hard-tuned autotune-style effects and natural pitch correction. Retune speed goes below 0 ms.**
 
-**A real-time automatic vocal tuner focused on low latency and natural sound.**
+![LyraTune vocal pitch correction VST3 plugin interface with the Speed knob at -3 ms negative retune speed, E major scale, pitch orb and input/output HeatMaps](docs/screenshot.png)
 
-![Lyra Tune interface](docs/screenshot.png)
+LyraTune is a free real-time pitch-correction plugin (VST3, Windows x64, also runs in Windows DAWs under Wine on Linux). It tunes vocals live with 3.6 ms of added latency, from transparent correction to the hard, robotic "snapped" vocal sound — and past it, with **negative retune speed**.
 
-LyraTune is a real-time pitch-correction plugin designed to deliver responsive vocal tuning, from transparent correction to aggressive hard-tuned effects.
+## ⚡ Negative Retune Speed — harder than instant
+
+Most pitch correctors stop at 0 ms: the note jumps straight to the target. LyraTune's **Speed** knob keeps going to **−3 ms**.
+
+**What it does:** when you sing from one note to the next, the output **overshoots past the new note and then settles onto it**. That small kick on every note change gives a harder, more aggressive hard-tune effect than 0 ms can.
+
+**How it works:**
+- On each confirmed note-to-note change, the pitch is pushed past the new note by up to **20 % of the interval** (at −3 ms; it scales linearly with how far below 0 you go, and with **Amount**).
+- The kick is capped at **±1 semitone**, so octave leaps stay musical.
+- It then settles onto the note with a **~100 ms** release.
+- Notes that start after silence do not overshoot — only transitions do.
+
+| Speed | Overshoot on a 2-semitone step |
+|---|---|
+| 0 ms | none (instant) |
+| −1 ms | 13 cents |
+| −2 ms | 27 cents |
+| −3 ms | 40 cents |
+
+**No lookahead, no extra latency.** The effect is computed causally from the detected pitch, so negative Speed adds 0 ms to the plugin's latency.
+
+**Tip:** pair it with the **Note Stabilizer**. The Stabilizer confirms a note before the kick fires, so vibrato and pitch wobble that brush a note boundary don't trigger overshoots — only real note changes do.
+
+The Speed knob has a definitive 0 ms notch and visibly "overloads" past it: the negative zone runs red-hot and the orb shifts toward pink.
 
 ## Features
 
 ### 🎯 Low-Latency Pitch Correction
-- **Honest latency reporting:** 3.6 ms / 5.3 ms / 7.4 ms of added latency at 48 kHz across High, Mid, and Low quality ranges, respectively.
-- **Host delay compensation:** Reports plugin latency to the host for proper plugin delay compensation (PDC).
-- **Adjustable tuning behavior:** Fine-tune correction speed and amount for everything from natural vocals to robotic effects.
-- **Aggressive tuning:** Supports correction speeds down to -3 ms for an especially immediate, hard-tuned sound — the Speed knob has a definitive 0 ms notch and visibly "overloads" past it.
-- **Note Stabilizer:** Short / Mid / Long confirmation so fast runs and grace notes stay natural — with zero added latency.
-- **Sustain:** Retune speed follows note age to tighten or loosen held notes.
-- **HQ mode:** Optional 2 ms detector lookahead for tighter tuning (latency rises by 2 ms and is reported to the host).
-- **Doubler:** Two subtly detuned, drifting voices with Width and Blend controls for an instant double-track.
+- **Honest latency reporting:** 3.6 / 5.3 / 7.4 ms of added latency at 48 kHz for the High / Mid / Low pitch ranges.
+- **Host delay compensation (PDC):** latency is reported to the host.
+- **Retune Speed −3 … 400 ms:** from natural, vibrato-preserving correction to instant hard tuning and the negative overshoot range.
+- **Amount:** blend between the natural and fully corrected pitch.
+- **Note Stabilizer:** Short / Mid / Long confirmation so fast runs and grace notes stay natural — zero added latency.
+- **Sustain:** retune speed follows note age to tighten or loosen held notes.
+- **HQ mode:** optional 2 ms detector lookahead for tighter tuning (+2 ms, reported to the host).
+- **Doubler:** two subtly detuned, drifting voices with Width and Blend for an instant double-track.
 
 ### 🎵 Accurate Pitch Detection
 - **YIN-based pitch detection** for real-time vocal pitch tracking.
-- **Octave-error protection** to help prevent incorrect octave detection.
-- Designed for responsive tracking during live vocal monitoring.
+- **Octave-error protection.**
+- Built for live vocal monitoring and tracking.
 
-### 🎹 Flexible Scale Control
-- Chromatic, major, minor, and fully custom scales.
-- Click individual keys to allow or forbid notes.
-- Right-click a key to set the scale root.
-- Customize pitch correction to fit your song and vocal performance.
+### 🎹 Key and Scale Control
+- Chromatic, major, minor and custom scales.
+- Click keys to allow or forbid notes; right-click a key to set the root.
+- Adjustable pitch reference (A4 = 420–460 Hz).
 
 ### 📊 Real-Time Visual Feedback
-- **Animated pitch orb** for live pitch visualization.
+- **Animated pitch orb** with the detected note and cents.
 - **Input and output HeatMaps** driven by real DSP data.
-- **Detected-note display** for immediate feedback on pitch tracking and correction.
 
-### ⚡ Real-Time Audio Safety
-- No memory allocations on the audio thread.
-- No locks on the audio thread.
-- Automated tests to verify real-time safety requirements.
+### 🛠️ Workflow
+- Undo / redo, A/B snapshots, reset to defaults.
+- Resizable interface, 75 % to 150 %.
+- Tooltips on every control.
 
-### 🛠️ Workflow and Usability
-- Undo and redo support.
-- A/B snapshots for comparing settings.
-- Reset all controls to their default values.
-- Resizable interface with scaling from 75% to 150%.
-- Tooltips for controls and parameters.
+### 🔒 Real-Time Audio Safety
+- No memory allocations or locks on the audio thread, verified by automated tests.
+
+## Download & Install
+
+Get `LyraTune-0.4.0-win-x64-vst3.zip` from the [Releases](https://github.com/333stack/LyraTune/releases/latest) page.
+
+- **Windows:** unzip and copy the `Lyra Tune.vst3` folder to `C:\Program Files\Common Files\VST3\`, then rescan plugins in your DAW (FL Studio, Ableton Live, Reaper, Studio One, Cubase, Bitwig…).
+- **Linux (Windows DAW under Wine):** copy it to the same folder inside the DAW's Wine prefix:
+  `<prefix>/drive_c/Program Files/Common Files/VST3/`.
+
+Format: VST3, Windows x64. Verify downloads with `SHA256SUMS.txt`.
+
+## FAQ
+
+**Is LyraTune free?** Yes. It is free and open source under the AGPL-3.0 license.
+
+**What is negative retune speed?** A Speed setting below 0 ms. Instead of jumping exactly to each new note, the voice briefly overshoots past it and settles, for a harder hard-tune effect. See [above](#-negative-retune-speed--harder-than-instant).
+
+**Does negative Speed add latency?** No. It uses no lookahead; latency stays the same as at 0 ms.
+
+**How do I get the hard-tuned "robotic" vocal effect?** Set Speed to 0 ms (or below for extra bite), Amount to 100 %, and choose your song's key and scale.
+
+**How do I get natural pitch correction?** Use Speed 20–80 ms, Amount 60–90 %, and the Note Stabilizer on Mid.
+
+**Can I use it for live vocals?** Yes. It is designed for real-time monitoring: 3.6 ms added latency at 48 kHz in the High range, plus your audio interface's buffer.
+
+**Does it run on Linux?** Through a Windows DAW running under Wine. A native Linux build is not available yet.
 
 ## Technical Overview
 
 | Component | Implementation |
 |---|---|
-| Pitch detection | YIN-based |
-| Processing | Real-time pitch correction |
-| Latency at 48 kHz | 3.6 / 5.3 / 7.4 ms |
+| Pitch detection | YIN-based, with octave-error protection |
+| Correction | One-pole retune smoothing; negative Speed adds a decaying overshoot |
+| Latency at 48 kHz | 3.6 / 5.3 / 7.4 ms (+2 ms in HQ) |
 | Latency compensation | Host-reported plugin latency |
 | Scale modes | Chromatic, major, minor, custom |
-| Audio-thread allocations | None |
-| Audio-thread locks | None |
-| Verification | Automated tests |
-
-## Credits
-
-- **Lead design and engineering:** stack
-- **Development assistance:** Claude (AI assistant)
-
-## Download & Install
-
-Get `LyraTune-0.2.0-win-x64-vst3.zip` from the [Releases](https://github.com/333stack/LyraTune/releases) page.
-
-- **Windows:** unzip and copy the `Lyra Tune.vst3` folder to `C:\Program Files\Common Files\VST3\`, then rescan plugins in your DAW.
-- **Linux (Windows DAW under Wine):** copy it to the same folder inside the DAW's Wine prefix:
-  `<prefix>/drive_c/Program Files/Common Files/VST3/`.
-
-Format: VST3, Windows x64. Verify downloads with `SHA256SUMS.txt`.
+| Audio-thread allocations / locks | None (tested) |
+| Format | VST3, Windows x64 |
 
 ## Build from Source
 
@@ -91,6 +119,11 @@ scripts/test.sh       # native unit tests
 
 Full user guide, DSP design, latency tables, measurements, known limitations and roadmap:
 **[LyraTune.md](LyraTune.md)**.
+
+## Credits
+
+- **Lead design and engineering:** stack
+- **Development assistance:** Claude (AI assistant)
 
 ## License
 

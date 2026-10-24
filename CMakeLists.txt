@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(LyraTune VERSION 0.3.1 LANGUAGES C CXX)
+project(LyraTune VERSION 0.4.0 LANGUAGES C CXX)
 
 # Product naming lives here only; DSP code never refers to it.
 set(PRODUCT_NAME "Lyra Tune" CACHE STRING "User-visible plugin name")
@@ -53,3 +53,11 @@ target_compile_definitions(LyraTune PUBLIC
 target_link_libraries(LyraTune
     PRIVATE LyraTuneAssets juce::juce_audio_processors
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
+
+# Dev tool: ui_snapshot renders the real editor to PNG under Wine (not installed, not part of the plugin).
+# Lives in the shared LyraTools checkout; skipped when it is absent.
+set(LYRA_TOOLS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../LyraTools" CACHE PATH "Shared Lyra dev tools")
+if(EXISTS "${LYRA_TOOLS_DIR}/ui_snapshot/LyraUiSnapshot.cmake")
+    include("${LYRA_TOOLS_DIR}/ui_snapshot/LyraUiSnapshot.cmake")
+    lyra_add_ui_snapshot(LyraTune)
+endif()
