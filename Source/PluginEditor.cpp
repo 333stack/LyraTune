@@ -50,8 +50,8 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     strikeAmountAttach = std::make_unique<SA> (state, ParamID::strikeAmount, strikeStrip);
     strikeLengthAttach = std::make_unique<SA> (state, ParamID::strikeLength, strikeLenStrip);
     for (auto* st : { &widthStrip, &blendStrip, &strikeStrip, &strikeLenStrip }) st->fillFromLeft = true;
-    strikeStrip.setDoubleClickReturnValue (true, 4.0);
-    strikeLenStrip.setDoubleClickReturnValue (true, 25.0);
+    strikeStrip.setDoubleClickReturnValue (true, 7.5);
+    strikeLenStrip.setDoubleClickReturnValue (true, 80.0);
     strikeStrip.barColour = strikeLenStrip.barColour = theme::heat;
     widthStrip.setDoubleClickReturnValue (true, 70.0);
     blendStrip.setDoubleClickReturnValue (true, 50.0);
@@ -119,8 +119,8 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     widthStrip.setTooltip ("Doubler stereo spread.");
     blendStrip.setTooltip ("Doubler level.");
     strikeButton.setTooltip ("Formant accent on every note change: darker going up, brighter going down. No added latency.");
-    strikeStrip.setTooltip ("LyraStrike formant shift. Double-click: 4 %.");
-    strikeLenStrip.setTooltip ("LyraStrike accent length (3 ms hit + tail). Double-click: 25 ms.");
+    strikeStrip.setTooltip ("LyraStrike formant shift. Double-click: 7.5 %.");
+    strikeLenStrip.setTooltip ("LyraStrike accent length (3 ms hit + tail). Double-click: 80 ms.");
     menuButton.setTooltip ("Settings, window size, HQ mode");
 
     updateTooltips();

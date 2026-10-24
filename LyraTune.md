@@ -104,9 +104,9 @@ Insert Lyra Tune on a **dry, monophonic** vocal track (before reverb, delay or d
 **Doubler and LyraStrike (top-left)** — the Doubler block (power button, Width, Blend), and below
 it the **LyraStrike** toggle (bolt icon) with its **Amount** and **Length** strips. LyraStrike makes every
 note change hit harder: for a short moment the formants dip on a step up (darker, larger) or rise on a step down
-(brighter, smaller), then return. Amount sets how far: ±1 % (subtle) … ±25 % (extreme), default ±4 %;
-double-click resets it. Length sets how long each accent lasts: 25 ms (tight, default) … 100 ms (a
-longer, sweeping tail); the 3 ms hit is the same at every length, only the return is stretched. The tuned pitch is not touched and no latency is added. When on, the toggle and its
+(brighter, smaller), then return. Amount sets how far: ±1 % (subtle) … ±25 % (extreme), default ±7.5 %;
+double-click resets it. Length sets how long each accent lasts: 25 ms (tight) … 100 ms (a sweeping
+tail), default 80 ms; the 3 ms hit is the same at every length, only the return is stretched. The tuned pitch is not touched and no latency is added. When on, the toggle and its
 frame glow red; off, no glow. The first note of a phrase (after ≥ 60 ms of silence) gets no accent.
 
 **Orb (left)** — a live view of what the tuner is doing:
@@ -195,8 +195,8 @@ Parameter IDs are stable and must never be renamed — saved projects and automa
 | `dblWidth` | Doubler Width | 0 … 100 % | 70 % | yes |
 | `dblBlend` | Doubler Blend | 0 … 100 % | 50 % | yes |
 | `strike` | LyraStrike | off / on | off | yes |
-| `strikeAmt` | LyraStrike Amount | ±1 … ±25 % (skewed toward small values) | ±4 % | yes |
-| `strikeLen` | LyraStrike Length | 25 … 100 ms | 25 ms | yes |
+| `strikeAmt` | LyraStrike Amount | ±1 … ±25 % (skewed toward small values) | ±7.5 % | yes |
+| `strikeLen` | LyraStrike Length | 25 … 100 ms | 80 ms | yes |
 
 Display preferences (HeatMaps, Detected Notes, tooltips, window size) are saved with the project but
 are not parameters.
@@ -342,7 +342,7 @@ A formant shift with the pitch untouched, computed causally (no added latency):
   faster** (its spectrum, and so its formants, scale by `s`; IIR lattice). `g = √(E_s/E)` holds the
   level. The harmonics stay in `e` and are never resampled, so the pitch cannot move.
 - Accent: `u` ramps to ±1 over 3 ms (raised cosine) and back to 0 over `Length − 3 ms` (Length 25–100 ms,
-  default 25; latched at each trigger); `s = 1 + depth·u`, depth = Amount (1–25 %, default 4 %), read
+  default 80; latched at each trigger); `s = 1 + depth·u`, depth = Amount (1–25 %, default 7.5 %), read
   at every coefficient update. Measured active time per accent: Length + 0–1 ms; peak at 3.0 ms.
   On real vocals ~40 % of accents are restarted by the next note change and chain into longer bursts
   (at 25 ms: mean 30–36 ms, max 188 ms on busy runs).
@@ -630,6 +630,11 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 ---
 
 ## 16. Changelog
+
+### 0.6.6 — 2026-10-24
+- LyraStrike defaults are now **Amount ±7.5 %, Length 80 ms** (were ±4 % / 25 ms). Projects saved
+  with 0.6.5 keep their own values; projects saved with 0.6.0 (no Amount/Length yet) are migrated to
+  ±4 % / 25 ms on load so they sound as they did.
 
 ### 0.6.5 — 2026-10-24
 - **LyraStrike Amount**: formant shift from ±1 % to ±25 % (default ±4 %, the 0.6.0 sound), on a red

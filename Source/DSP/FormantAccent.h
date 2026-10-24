@@ -17,9 +17,9 @@ namespace lyra
 // With k_s == k and equal lattice states the cascade is an exact identity even while k varies, so the
 // accent starts and ends seamlessly; between accents the signal passes untouched (no CPU).
 //
-// Accent shape (length L = 25..100 ms, default 25): u ramps to +-1 over 3 ms (raised cosine), back to 0
+// Accent shape (length L = 25..100 ms, default 80): u ramps to +-1 over 3 ms (raised cosine), back to 0
 // over L - 3 ms (the attack stays 3 ms at any length, so the hit stays sharp; longer L = longer tail);
-// s = 1 + depth * u, depth = 1..25 % (default 4 %). Note up -> u = -1 (darker, larger), note down -> u = +1 (brighter,
+// s = 1 + depth * u, depth = 1..25 % (default 7.5 %). Note up -> u = -1 (darker, larger), note down -> u = +1 (brighter,
 // smaller). A retrigger ramps from wherever u is, so rapid note changes never jump.
 // Coefficients are recomputed every ~2 ms and interpolated per sample (reflection coefficients
 // stay in (-1, 1), so the interpolated lattice stays stable).
@@ -34,9 +34,9 @@ class FormantAccent
 {
 public:
     static constexpr int kMaxOrder = 32, kMaxChannels = 2;
-    static constexpr double kDefaultDepth = 0.04, kMinDepth = 0.01, kMaxDepth = 0.25;
+    static constexpr double kDefaultDepth = 0.075, kMinDepth = 0.01, kMaxDepth = 0.25;
     static constexpr double kAttackSeconds = 0.003;
-    static constexpr double kDefaultLength = 0.025, kMinLength = 0.025, kMaxLength = 0.100;
+    static constexpr double kDefaultLength = 0.080, kMinLength = 0.025, kMaxLength = 0.100;
     static constexpr double kWindowSeconds = 0.020, kUpdateSeconds = 0.002;
 
     void prepare (double sampleRate);

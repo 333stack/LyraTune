@@ -127,6 +127,18 @@ void LyraTuneProcessor::copyToOtherAB()
 }
 
 
+// 0.6.0 saved LyraStrike without Amount/Length (it was fixed at 4 % / 25 ms). Missing parameters load
+// at their defaults, which are now 7.5 % / 80 ms, so fill in the old values to keep those projects' sound.
+static juce::ValueTree migrateState (juce::ValueTree t)
+{
+    if (t.getChildWithProperty ("id", ParamID::strike).isValid() && ! t.getChildWithProperty ("id", ParamID::strikeAmount).isValid())
+    {
+        t.appendChild (juce::ValueTree ("PARAM", { { "id", ParamID::strikeAmount }, { "value", 4.0 } }), nullptr);
+        t.appendChild (juce::ValueTree ("PARAM", { { "id", ParamID::strikeLength }, { "value", 25.0 } }), nullptr);
+    }
+    return t;
+}
+
 // State format v1: <LYRA version="1"><STATE .../><AB slot=".."><A/><B/></AB><UI .../></LYRA>.
 // Also accepts the pre-v1 format (a bare <STATE>). Unknown/missing pieces fall back to defaults.
 void LyraTuneProcessor::getStateInformation (juce::MemoryBlock& dest)
@@ -158,7 +170,7 @@ void LyraTuneProcessor::setStateInformation (const void* data, int size)
         return;
     const auto* st = xml->hasTagName ("LYRA") ? xml->getChildByName (apvts.state.getType()) : xml.get();
     if (st != nullptr && st->hasTagName (apvts.state.getType()))
-        apvts.replaceState (juce::ValueTree::fromXml (*st));
+        apvts.replaceState (migrateState (juce::ValueTree::fromXml (*st)));
 
     if (const auto* ab = xml->getChildByName ("AB"))
     {
@@ -168,7 +180,7 @@ void LyraTuneProcessor::setStateInformation (const void* data, int size)
             abSnapshot[i] = {};
             if (const auto* holder = ab->getChildByName (i == 0 ? "A" : "B"))
                 if (const auto* snap = holder->getChildByName (apvts.state.getType()))
-                    abSnapshot[i] = juce::ValueTree::fromXml (*snap);
+                    abSnapshot[i] = migrateState (juce::ValueTree::fromXml (*snap));
         }
     }
     if (const auto* u = xml->getChildByName ("UI"))

@@ -923,9 +923,10 @@ static std::vector<float> vowel (double sr, double f0, double F1, double seconds
 }
 // Runs a FormantAccent over x (32-sample blocks), triggering `dir` at each time in `at` (s).
 static std::vector<float> runAccent (const std::vector<float>& x, double sr, std::vector<std::pair<double, int>> at, int* maxActiveSamples = nullptr,
-                                     double depth = FormantAccent::kDefaultDepth)
+                                     double depth = 0.04, double length = 0.025)
 {
-    FormantAccent fa; fa.prepare (sr); fa.setEnabled (true); fa.setDepth (depth);
+    // Explicit 4 % / 25 ms (not the defaults): the tests below are written around that shape.
+    FormantAccent fa; fa.prepare (sr); fa.setEnabled (true); fa.setDepth (depth); fa.setLength (length);
     std::vector<float> y = x;
     int run = 0, longest = 0;
     for (size_t n = 0; n < y.size(); n += 32)
@@ -1096,7 +1097,7 @@ TEST (strike_is_seamless_and_bounded)
     CHECK (longest < int (0.050 * sr));       // accent ends (25 ms + coefficient ramp + retriggers)
     }
     // Disabled: triggers are ignored, output is the input.
-    FormantAccent off; off.prepare (sr);
+    FormantAccent off; off.prepare (sr); off.setLength (0.025);
     std::vector<float> z = x;
     for (size_t n = 0; n < z.size(); n += 32) { if (n == 9600) off.trigger (1); float* io[1] { z.data() + n }; off.process (io, 1, 32); }
     CHECK (z == x);
@@ -1120,6 +1121,7 @@ TEST (strike_in_chain_triggers_on_note_changes_only)
     std::vector<float> R = L;
     TunerChain chain; chain.prepare (sr, 70.0);
     TunerChain::Settings s; s.correction.speedMs = 0; s.strike = true; s.minFreq = 100;
+    CHECK (s.strikeDepth == 0.075 && s.strikeLength == 0.080); // shipped defaults (also in Parameters.h)
     chain.setSettings (s); chain.reset();
     int starts = 0; bool was = false; std::vector<double> dirs; dirs.reserve (16);
     const long before = gAllocs.load();

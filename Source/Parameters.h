@@ -87,11 +87,11 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
     // LyraStrike: formant accent on note changes. Adds no latency.
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::strike, 5 }, "LyraStrike", false));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::strikeAmount, 6 }, "LyraStrike Amount",
-        NormalisableRange<float> (1.0f, 25.0f, 0.5f, 0.5f), 4.0f, // skewed: most travel in the subtle 1-8 % range
+        NormalisableRange<float> (1.0f, 25.0f, 0.5f, 0.5f), 7.5f, // skewed: most travel in the subtle 1-8 % range
         AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (
             [] (float x, int) { return juce::String::fromUTF8 ("\xc2\xb1") + String (x, x < 10.0f && x != std::floor (x) ? 1 : 0) + " %"; })));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::strikeLength, 6 }, "LyraStrike Length",
-        NormalisableRange<float> (25.0f, 100.0f, 1.0f), 25.0f,
+        NormalisableRange<float> (25.0f, 100.0f, 1.0f), 80.0f,
         AudioParameterFloatAttributes().withLabel ("ms").withStringFromValueFunction (
             [] (float x, int) { return String (roundToInt (x)) + " ms"; })));
 
