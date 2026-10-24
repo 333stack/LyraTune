@@ -36,5 +36,6 @@ void drawHairline (juce::Graphics&, juce::Point<float> from, juce::Point<float> 
 void drawSectionPanel (juce::Graphics&, juce::Rectangle<float> area, float radius = 10.0f);
 // Quiet "selected" treatment for a pill: soft halo, faint tint, glassy top highlight.
 // Intentionally far below the dramatic effects (overload, orb); `strength` 0..1 scales it further.
-void drawSelectionGlow (juce::Graphics&, juce::Rectangle<float> pill, juce::Colour tint = violet, float strength = 1.0f);
+// cornerRadius < 0: fully rounded pill.
+void drawSelectionGlow (juce::Graphics&, juce::Rectangle<float> pill, juce::Colour tint = violet, float strength = 1.0f, float cornerRadius = -1.0f);
 } // namespace theme

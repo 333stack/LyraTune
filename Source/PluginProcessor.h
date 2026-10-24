@@ -74,6 +74,8 @@ private:
     std::atomic<float>* pDblWidth = nullptr;
     std::atomic<float>* pDblBlend = nullptr;
     std::atomic<float>* pStrike = nullptr;
+    std::atomic<float>* pStrikeAmount = nullptr;
+    std::atomic<float>* pStrikeLength = nullptr;
     std::atomic<float>* pNotes[12] {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LyraTuneProcessor)

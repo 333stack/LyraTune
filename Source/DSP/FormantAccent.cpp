@@ -15,7 +15,7 @@ void FormantAccent::prepare (double sampleRate)
     win = std::max (64, int (std::lround (kWindowSeconds * sr)));
     updateLen = std::max (16, int (std::lround (kUpdateSeconds * sr)));
     int size = 1;
-    while (size < int (win * (1.0 + kDepth)) + 8) size <<= 1;
+    while (size < int (win * (1.0 + kMaxDepth)) + 8) size <<= 1;
     hist.assign (size_t (size), 0.0f);
     histMask = size - 1;
     frame.assign (size_t (win), 0.0);
@@ -38,7 +38,7 @@ double FormantAccent::envelopeAt (double tt) const noexcept
 {
     if (tt < kAttackSeconds)
         return uFrom + (uTarget - uFrom) * raisedCos (tt / kAttackSeconds);
-    return uTarget * (1.0 - raisedCos ((tt - kAttackSeconds) / kReleaseSeconds));
+    return uTarget * (1.0 - raisedCos ((tt - kAttackSeconds) / release));
 }
 
 void FormantAccent::windowed (double s) noexcept
@@ -115,7 +115,7 @@ void FormantAccent::update() noexcept
     }
     else
     {
-        windowed (1.0 + kDepth * uEnd);
+        windowed (1.0 + depth * uEnd);
         const double es = reflection (frame.data(), win, order, sr, ks1, stride);
         gain1 = e > 0 && es > 0 ? std::clamp (std::sqrt (es / e), 0.5, 2.0) : 1.0;
         finishing = false;
@@ -140,6 +140,7 @@ void FormantAccent::trigger (int direction) noexcept
     }
     uFrom = u;
     uTarget = direction > 0 ? -1.0 : 1.0; // up -> formants down; down -> formants up
+    release = length - kAttackSeconds;
     t = 0;
     untilUpdate = 0; // retarget now
     finishing = false;
@@ -177,7 +178,7 @@ void FormantAccent::process (float* const* ch, int numCh, int n) noexcept
         }
         const double gn = gain0 + (gain1 - gain0) * frac;
         t += 1.0 / sr;
-        u = t < kAttackSeconds + kReleaseSeconds ? envelopeAt (t) : 0.0;
+        u = t < kAttackSeconds + release ? envelopeAt (t) : 0.0;
 
         for (int c = 0; c < numCh; ++c)
         {

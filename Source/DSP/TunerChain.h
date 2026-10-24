@@ -45,6 +45,8 @@ public:
         bool bypass = false;
         Doubler::Params doubler;
         bool strike = false;   // LyraStrike formant accent on note changes
+        double strikeDepth = FormantAccent::kDefaultDepth;   // its formant shift (0.01..0.25)
+        double strikeLength = FormantAccent::kDefaultLength; // its accent length (0.025..0.1 s)
     };
 
     void prepare (double sampleRate, double lowestMinFreq);

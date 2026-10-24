@@ -11,7 +11,7 @@ const juce::Rectangle<float> scaleWell { 6.0f, rowY + 4.0f, 322.0f, rowH - 8.0f 
 const juce::Rectangle<float> stabilizerWell { 334.0f, rowY + 4.0f, 290.0f, rowH - 8.0f };
 const juce::Rectangle<float> rangeWell { 630.0f, rowY + 4.0f, 264.0f, rowH - 8.0f };
 const juce::Rectangle<float> doublerFrame { 8.0f, 52.0f, 114.0f, 140.0f };
-const juce::Rectangle<float> strikeFrame { 8.0f, 200.0f, 114.0f, 40.0f };
+const juce::Rectangle<float> strikeFrame { 8.0f, 200.0f, 114.0f, 120.0f };
 const juce::Rectangle<float> latencyFrame { 8.0f, rowY - 42.0f, 164.0f, 38.0f };
 constexpr int keysX = 160, keysW = 600, keysY = 420, keysBottom = 592;
 constexpr int rightX = 772;
@@ -35,7 +35,7 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     for (auto* c : std::initializer_list<juce::Component*> { &orb, &speedKnob, &amountKnob, &sustainKnob, &scaleSeg, &stabilizerSeg, &rangeSeg, &keyboard, &refStrip,
                                                             &menuButton, &undoButton, &redoButton, &resetButton, &aButton, &copyButton, &bButton,
                                                             &helpButton, &heatButton, &detectedButton, &bypassButton, &credit,
-                                                            &doublerButton, &widthStrip, &blendStrip, &strikeButton })
+                                                            &doublerButton, &widthStrip, &blendStrip, &strikeButton, &strikeStrip, &strikeLenStrip })
         canvas.addAndMakeVisible (c);
 
     using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -47,7 +47,12 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     refAttach = std::make_unique<SA> (state, ParamID::referenceHz, refStrip);
     widthAttach = std::make_unique<SA> (state, ParamID::doublerWidth, widthStrip);
     blendAttach = std::make_unique<SA> (state, ParamID::doublerBlend, blendStrip);
-    for (auto* st : { &widthStrip, &blendStrip }) st->fillFromLeft = true;
+    strikeAmountAttach = std::make_unique<SA> (state, ParamID::strikeAmount, strikeStrip);
+    strikeLengthAttach = std::make_unique<SA> (state, ParamID::strikeLength, strikeLenStrip);
+    for (auto* st : { &widthStrip, &blendStrip, &strikeStrip, &strikeLenStrip }) st->fillFromLeft = true;
+    strikeStrip.setDoubleClickReturnValue (true, 4.0);
+    strikeLenStrip.setDoubleClickReturnValue (true, 25.0);
+    strikeStrip.barColour = strikeLenStrip.barColour = theme::heat;
     widthStrip.setDoubleClickReturnValue (true, 70.0);
     blendStrip.setDoubleClickReturnValue (true, 50.0);
     doublerButton.setClickingTogglesState (true);
@@ -114,6 +119,8 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     widthStrip.setTooltip ("Doubler stereo spread.");
     blendStrip.setTooltip ("Doubler level.");
     strikeButton.setTooltip ("Formant accent on every note change: darker going up, brighter going down. No added latency.");
+    strikeStrip.setTooltip ("LyraStrike formant shift. Double-click: 4 %.");
+    strikeLenStrip.setTooltip ("LyraStrike accent length (3 ms hit + tail). Double-click: 25 ms.");
     menuButton.setTooltip ("Settings, window size, HQ mode");
 
     updateTooltips();
@@ -176,6 +183,8 @@ void LyraTuneEditor::layout()
     widthStrip.setBounds (18, 112, 96, 26);
     blendStrip.setBounds (18, 158, 96, 26);
     strikeButton.setBounds (14, 206, 102, 28);
+    strikeStrip.setBounds (18, 250, 96, 26);
+    strikeLenStrip.setBounds (18, 290, 96, 26);
 
     scaleSeg.setBounds (58, rowY + 5, 266, rowH - 10);
     stabilizerSeg.setBounds (408, rowY + 5, 212, rowH - 10);
@@ -263,8 +272,14 @@ void LyraTuneEditor::Canvas::paint (juce::Graphics& g)
 
     // LyraStrike section: when on, the whole well glows hot red (the same red as Speed's overload).
     drawSectionPanel (g, strikeFrame, 10.0f);
-    if (e.state.getRawParameterValue (ParamID::strike)->load() > 0.5f)
-        drawSelectionGlow (g, strikeFrame, heat, 0.8f);
+    const bool strikeOn = e.state.getRawParameterValue (ParamID::strike)->load() > 0.5f;
+    if (strikeOn)
+        drawSelectionGlow (g, strikeFrame, heat, 0.8f, 10.0f);
+    drawHairline (g, { strikeFrame.getX() + 10.0f, 238.0f }, { strikeFrame.getRight() - 10.0f, 238.0f }, strikeOn ? 0.22f : 0.12f);
+    g.setColour (strikeOn ? textDim : textFaint);
+    g.setFont (font (11.5f, true));
+    g.drawText ("Amount", 18, 238, 96, 14, juce::Justification::centredLeft);
+    g.drawText ("Length", 18, 278, 96, 14, juce::Justification::centredLeft);
 
     // Latency section (HQ mode, which adds 2 ms, is toggled in the main menu; the readout includes it).
     drawSectionPanel (g, latencyFrame, 10.0f);
@@ -348,6 +363,8 @@ void LyraTuneEditor::timerCallback()
     widthStrip.setAlpha (dblOn ? 1.0f : 0.45f);
     blendStrip.setAlpha (dblOn ? 1.0f : 0.45f);
     const bool strikeOn = state.getRawParameterValue (ParamID::strike)->load() > 0.5f;
+    strikeStrip.setAlpha (strikeOn ? 1.0f : 0.45f);
+    strikeLenStrip.setAlpha (strikeOn ? 1.0f : 0.45f);
     if (strikeOn != lastStrikeOn) { lastStrikeOn = strikeOn; canvas.repaint (layout::strikeFrame.toNearestInt().expanded (8)); }
     if (dblOn != lastDoublerOn) { lastDoublerOn = dblOn; canvas.repaint (layout::doublerFrame.toNearestInt().expanded (2)); }
     if (lat != latencyText) { latencyText = lat; canvas.repaint (layout::latencyFrame.toNearestInt().expanded (2)); }

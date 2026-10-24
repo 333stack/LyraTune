@@ -18,6 +18,8 @@ inline constexpr auto doubler = "doubler";
 inline constexpr auto doublerWidth = "dblWidth";
 inline constexpr auto doublerBlend = "dblBlend";
 inline constexpr auto strike = "strike"; // LyraStrike
+inline constexpr auto strikeAmount = "strikeAmt";
+inline constexpr auto strikeLength = "strikeLen";
 inline juce::String note (int pitchClass) { return "note" + juce::String (pitchClass); } // note0 (C) .. note11 (B)
 }
 
@@ -84,6 +86,14 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
 
     // LyraStrike: formant accent on note changes. Adds no latency.
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::strike, 5 }, "LyraStrike", false));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::strikeAmount, 6 }, "LyraStrike Amount",
+        NormalisableRange<float> (1.0f, 25.0f, 0.5f, 0.5f), 4.0f, // skewed: most travel in the subtle 1-8 % range
+        AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction (
+            [] (float x, int) { return juce::String::fromUTF8 ("\xc2\xb1") + String (x, x < 10.0f && x != std::floor (x) ? 1 : 0) + " %"; })));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::strikeLength, 6 }, "LyraStrike Length",
+        NormalisableRange<float> (25.0f, 100.0f, 1.0f), 25.0f,
+        AudioParameterFloatAttributes().withLabel ("ms").withStringFromValueFunction (
+            [] (float x, int) { return String (roundToInt (x)) + " ms"; })));
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::range, v }, "Range", kRangeNames, 0,
         AudioParameterChoiceAttributes().withAutomatable (false)));

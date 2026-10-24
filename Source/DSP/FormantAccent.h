@@ -1,4 +1,6 @@
 #pragma once
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace lyra
@@ -15,8 +17,9 @@ namespace lyra
 // With k_s == k and equal lattice states the cascade is an exact identity even while k varies, so the
 // accent starts and ends seamlessly; between accents the signal passes untouched (no CPU).
 //
-// Accent shape (25 ms): u ramps to +-1 over 3 ms (raised cosine), back to 0 over 22 ms;
-// s = 1 + depth * u, depth = 4 %. Note up -> u = -1 (darker, larger), note down -> u = +1 (brighter,
+// Accent shape (length L = 25..100 ms, default 25): u ramps to +-1 over 3 ms (raised cosine), back to 0
+// over L - 3 ms (the attack stays 3 ms at any length, so the hit stays sharp; longer L = longer tail);
+// s = 1 + depth * u, depth = 1..25 % (default 4 %). Note up -> u = -1 (darker, larger), note down -> u = +1 (brighter,
 // smaller). A retrigger ramps from wherever u is, so rapid note changes never jump.
 // Coefficients are recomputed every ~2 ms and interpolated per sample (reflection coefficients
 // stay in (-1, 1), so the interpolated lattice stays stable).
@@ -31,12 +34,19 @@ class FormantAccent
 {
 public:
     static constexpr int kMaxOrder = 32, kMaxChannels = 2;
-    static constexpr double kDepth = 0.04, kAttackSeconds = 0.003, kReleaseSeconds = 0.022;
+    static constexpr double kDefaultDepth = 0.04, kMinDepth = 0.01, kMaxDepth = 0.25;
+    static constexpr double kAttackSeconds = 0.003;
+    static constexpr double kDefaultLength = 0.025, kMinLength = 0.025, kMaxLength = 0.100;
     static constexpr double kWindowSeconds = 0.020, kUpdateSeconds = 0.002;
 
     void prepare (double sampleRate);
     void reset() noexcept;
     void setEnabled (bool on) noexcept { enabled = on; } // a running accent always finishes
+    // Formant shift at the accent's peak, as a fraction (0.04 = +-4 %); clamped to [1 %, 25 %].
+    // Read at every coefficient update, so a change during an accent glides with it.
+    void setDepth (double d) noexcept { depth = std::isfinite (d) ? std::clamp (d, kMinDepth, kMaxDepth) : kDefaultDepth; }
+    // Accent length in seconds, clamped to [25, 100] ms. Latched at each trigger: a running accent keeps its shape.
+    void setLength (double s) noexcept { length = std::isfinite (s) ? std::clamp (s, kMinLength, kMaxLength) : kDefaultLength; }
     // Note change: direction > 0 = up to a higher note, < 0 = down.
     void trigger (int direction) noexcept;
     bool isActive() const noexcept { return active; }
@@ -58,7 +68,7 @@ private:
     std::vector<float> hist;
     std::vector<double> frame, hann;
     int histMask = 0, histPos = 0, win = 0, order = 16, updateLen = 96, untilUpdate = 0, stride = 1;
-    double sr = 48000;
+    double sr = 48000, depth = kDefaultDepth, length = kDefaultLength, release = kDefaultLength - kAttackSeconds;
     bool enabled = false, active = false, finishing = false; // finishing: last ramp ends at k_s == k
     double u = 0, uFrom = 0, uTarget = 0, t = 0;             // envelope; t = seconds since trigger
     // Coefficients ramp linearly from *0 to *1 over one update (analysis ka, synthesis ks).

@@ -49,8 +49,8 @@ private:
     Canvas canvas { *this };
 
     Knob speedKnob, amountKnob, sustainKnob;
-    ValueStrip refStrip, widthStrip, blendStrip;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> speedAttach, amountAttach, sustainAttach, refAttach, widthAttach, blendAttach;
+    ValueStrip refStrip, widthStrip, blendStrip, strikeStrip, strikeLenStrip;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> speedAttach, amountAttach, sustainAttach, refAttach, widthAttach, blendAttach, strikeAmountAttach, strikeLengthAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttach, doublerAttach, strikeAttach;
     Orb orb;
     KeyboardPanel keyboard;

@@ -59,6 +59,8 @@ void TunerChain::setSettings (const Settings& s) noexcept
     }
     doubler.setParams (s.doubler);
     strike.setEnabled (s.strike);
+    strike.setDepth (s.strikeDepth);
+    strike.setLength (s.strikeLength);
     wetTarget = s.bypass ? 0.0f : 1.0f;
 }
 

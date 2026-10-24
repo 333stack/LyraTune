@@ -102,9 +102,11 @@ Insert Lyra Tune on a **dry, monophonic** vocal track (before reverb, delay or d
 - **?**: show or hide tooltips.
 
 **Doubler and LyraStrike (top-left)** — the Doubler block (power button, Width, Blend), and below
-it the **LyraStrike** toggle (bolt icon). LyraStrike makes every note change hit harder: for 25 ms
-the formants dip 4 % on a step up (darker, larger) or rise 4 % on a step down (brighter, smaller),
-then return. The tuned pitch is not touched and no latency is added. When on, the toggle and its
+it the **LyraStrike** toggle (bolt icon) with its **Amount** and **Length** strips. LyraStrike makes every
+note change hit harder: for a short moment the formants dip on a step up (darker, larger) or rise on a step down
+(brighter, smaller), then return. Amount sets how far: ±1 % (subtle) … ±25 % (extreme), default ±4 %;
+double-click resets it. Length sets how long each accent lasts: 25 ms (tight, default) … 100 ms (a
+longer, sweeping tail); the 3 ms hit is the same at every length, only the return is stretched. The tuned pitch is not touched and no latency is added. When on, the toggle and its
 frame glow red; off, no glow. The first note of a phrase (after ≥ 60 ms of silence) gets no accent.
 
 **Orb (left)** — a live view of what the tuner is doing:
@@ -193,6 +195,8 @@ Parameter IDs are stable and must never be renamed — saved projects and automa
 | `dblWidth` | Doubler Width | 0 … 100 % | 70 % | yes |
 | `dblBlend` | Doubler Blend | 0 … 100 % | 50 % | yes |
 | `strike` | LyraStrike | off / on | off | yes |
+| `strikeAmt` | LyraStrike Amount | ±1 … ±25 % (skewed toward small values) | ±4 % | yes |
+| `strikeLen` | LyraStrike Length | 25 … 100 ms | 25 ms | yes |
 
 Display preferences (HeatMaps, Detected Notes, tooltips, window size) are saved with the project but
 are not parameters.
@@ -337,7 +341,11 @@ A formant shift with the pitch untouched, computed causally (no added latency):
   `y = g · e / A_s(z)` re-colours it with the envelope of the **same 20 ms window read `s` times
   faster** (its spectrum, and so its formants, scale by `s`; IIR lattice). `g = √(E_s/E)` holds the
   level. The harmonics stay in `e` and are never resampled, so the pitch cannot move.
-- Accent: `u` ramps to ±1 over 3 ms (raised cosine) and back to 0 over 22 ms; `s = 1 + 0.04·u`.
+- Accent: `u` ramps to ±1 over 3 ms (raised cosine) and back to 0 over `Length − 3 ms` (Length 25–100 ms,
+  default 25; latched at each trigger); `s = 1 + depth·u`, depth = Amount (1–25 %, default 4 %), read
+  at every coefficient update. Measured active time per accent: Length + 0–1 ms; peak at 3.0 ms.
+  On real vocals ~40 % of accents are restarted by the next note change and chain into longer bursts
+  (at 25 ms: mean 30–36 ms, max 188 ms on busy runs).
   Step up → `u = −1`; step down → `u = +1`. Retriggers ramp from the current `u`.
 - Trigger: a change of the target note from one note to another. A pending (Stabilizer) note or a
   short consonant gap keeps the previous note; ≥ 60 ms unvoiced starts a new phrase (no accent).
@@ -352,6 +360,10 @@ A formant shift with the pitch untouched, computed causally (no added latency):
   (< 0.25 c); the detector sees a transient ≤ 1.9 c while the waveform shape changes. Level within
   0.03 dB; no new clicks. An LPC envelope is smoother than a real vocal tract's, so sharp formant
   peaks move less than an ideal 4 % shift (per-harmonic detail ≈ 25–45 % of ideal).
+- Amount (48 kHz, same vowels): move vs a true shift of that size ±1 % 78–84 %, ±4 % 78–86 %,
+  ±10 % 89–97 %, ±25 % 124–138 % (a little past the target). Pitch averaged over the accent stays
+  within 0.25 c at every amount; the brief detector transient grows with the amount (0.5 / 1.7 / 4.4 /
+  12.8 c). At ±25 % the level rises 0.3 dB during accents and the sharpest sample step ~20 %.
 - shortcut: order, lag window and window length were chosen on synthetic vowels; revisit by ear on
   very high or very low voices.
 
@@ -465,7 +477,7 @@ A native Linux VST3 is a different binary and will not load in a Windows DAW run
 
 ## 12. Testing and measurements
 
-### Automated tests (`scripts/test.sh`) — 43 tests, all passing; ASan/UBSan clean
+### Automated tests (`scripts/test.sh`) — 45 tests, all passing; ASan/UBSan clean
 - Frequency ↔ MIDI conversion, reference pitch, cents error.
 - Scale masks, transposition, nearest allowed note, ties, hysteresis, mask changes, empty mask.
 - YIN on sines 80–880 Hz at 44.1 / 48 / 88.2 / 96 / 192 kHz: max error < 3 cents, > 99 % voiced.
@@ -483,8 +495,9 @@ A native Linux VST3 is a different binary and will not load in a Windows DAW run
 - Sustain: measured time constant after a 1 s hold at Speed 80 ms: 80 ms (0), 10 ms (+100),
   640 ms (−100); Speed 0 stays instant.
 - End to end: a tone 35 cents sharp is corrected to within 0.04 cents.
-- LyraStrike: formant move vs a true 4 % move, direction, pitch kept (44.1/48/96 kHz); no clicks,
-  level kept, bit-exact passthrough between accents, accent ends; in the chain, accents fire only on
+- LyraStrike: formant move vs a true 4 % move, direction, pitch kept (44.1/48/96 kHz); Amount 1–25 %
+  scales the move monotonically with pitch kept; Length 25/50/100 ms gives that active time with the
+  peak at 3 ms; no clicks (4 % and 25 %, every length), level kept, bit-exact passthrough between accents, accent ends; in the chain, accents fire only on
   note-to-note changes (not phrase onsets) with the right direction, no allocations.
 - Full chain: zero heap allocations while switching bypass/Range/Speed; no clicks (max sample step
   equals the input's own).
@@ -617,6 +630,14 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 ---
 
 ## 16. Changelog
+
+### 0.6.5 — 2026-10-24
+- **LyraStrike Amount**: formant shift from ±1 % to ±25 % (default ±4 %, the 0.6.0 sound), on a red
+  strip under the LyraStrike toggle. New parameter `strikeAmt`; projects from 0.6.0 load at ±4 %.
+- **LyraStrike Length**: 25–100 ms per accent (default 25 ms, the 0.6.0 sound). The 3 ms hit stays;
+  only the return is stretched. New parameter `strikeLen`.
+- The LyraStrike section glow follows the section's shape.
+- 45 automated tests.
 
 ### 0.6.0 — 2026-10-24
 - **LyraStrike**: a 25 ms formant accent on every note change (±4 %: darker going up, brighter going

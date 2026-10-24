@@ -195,9 +195,9 @@ void ValueStrip::paint (juce::Graphics& g)
     const float t = float (valueToProportionOfLength (getValue()));
     const float mid = fillFromLeft ? track.getX() : track.getCentreX(), x = track.getX() + t * track.getWidth();
     const auto bar = juce::Rectangle<float> (juce::jmin (mid, x), track.getY(), std::abs (x - mid) + 1.5f, track.getHeight());
-    g.setColour (violet.withAlpha (0.16f)); // soft glow under the value bar
+    g.setColour (barColour.withAlpha (0.16f)); // soft glow under the value bar
     g.fillRoundedRectangle (bar.expanded (1.5f, 2.0f), 3.5f);
-    g.setGradientFill (juce::ColourGradient (violet.interpolatedWith (lavender, 0.25f), bar.getX(), bar.getY(), violet, bar.getX(), bar.getBottom(), false));
+    g.setGradientFill (juce::ColourGradient (barColour.interpolatedWith (lavender, 0.25f), bar.getX(), bar.getY(), barColour, bar.getX(), bar.getBottom(), false));
     g.fillRoundedRectangle (bar, 2.0f);
     g.setColour (isMouseOverOrDragging() ? text : text.withAlpha (0.85f));
     g.setFont (font (14.0f, true));

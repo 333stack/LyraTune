@@ -31,9 +31,9 @@ void drawSectionPanel (juce::Graphics& g, juce::Rectangle<float> r, float radius
     g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
 }
 
-void drawSelectionGlow (juce::Graphics& g, juce::Rectangle<float> p, juce::Colour tint, float strength)
+void drawSelectionGlow (juce::Graphics& g, juce::Rectangle<float> p, juce::Colour tint, float strength, float cornerRadius)
 {
-    const float rad = p.getHeight() * 0.5f;
+    const float rad = cornerRadius >= 0.0f ? cornerRadius : p.getHeight() * 0.5f;
     // Halo: three faint, widening rounded rects (a cheap blur).
     for (int i = 3; i >= 1; --i)
     {

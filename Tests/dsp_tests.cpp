@@ -922,9 +922,10 @@ static std::vector<float> vowel (double sr, double f0, double F1, double seconds
     return v;
 }
 // Runs a FormantAccent over x (32-sample blocks), triggering `dir` at each time in `at` (s).
-static std::vector<float> runAccent (const std::vector<float>& x, double sr, std::vector<std::pair<double, int>> at, int* maxActiveSamples = nullptr)
+static std::vector<float> runAccent (const std::vector<float>& x, double sr, std::vector<std::pair<double, int>> at, int* maxActiveSamples = nullptr,
+                                     double depth = FormantAccent::kDefaultDepth)
 {
-    FormantAccent fa; fa.prepare (sr); fa.setEnabled (true);
+    FormantAccent fa; fa.prepare (sr); fa.setEnabled (true); fa.setDepth (depth);
     std::vector<float> y = x;
     int run = 0, longest = 0;
     for (size_t n = 0; n < y.size(); n += 32)
@@ -990,13 +991,92 @@ TEST (strike_moves_formants_not_pitch)
     }
 }
 
+TEST (strike_amount_scales_the_shift)
+{
+    // 48 kHz, same vowels as above: the move must track the requested amount from 1 % to 25 %.
+    const double sr = 48000;
+    double prev = 0;
+    for (double depth : { 0.01, 0.04, 0.10, 0.25 })
+    {
+        double got[2] {}, want[2] {}, worst = 0, pWorst = 0, pMean = 0;
+        for (double f0 : { 110.0, 220.0 })
+            for (auto [F1, F2] : { std::pair { 700.0, 1200.0 }, { 400.0, 2000.0 }, { 550.0, 900.0 }, { 300.0, 2300.0 } })
+            {
+                auto x = vowel (sr, f0, F1, 0.6, F2);
+                const double c0 = harmonicCentroid (x, sr, f0, 0.303, 0.010);
+                for (int d = 0; d < 2; ++d)
+                {
+                    auto y = runAccent (x, sr, { { 0.30, d == 0 ? +1 : -1 } }, nullptr, depth);
+                    auto truth = vowel (sr, f0, F1, 0.6, F2, d == 0 ? 1.0 - depth : 1.0 + depth);
+                    got[d] += harmonicCentroid (y, sr, f0, 0.303, 0.010) / c0 - 1;
+                    want[d] += harmonicCentroid (truth, sr, f0, 0.303, 0.010) / c0 - 1;
+                    for (float v : y) worst = std::max (worst, double (std::abs (v)));
+                    YinDetector det; det.prepare (sr, {});
+                    double sum = 0; int cnt = 0; size_t k = 0;
+                    det.process (y.data(), int (y.size()), [&] (int, const PitchEstimate& e) {
+                        if (++k > 50 && e.voiced) { const double c = 1200 * std::log2 (e.frequency / f0); pWorst = std::max (pWorst, std::abs (c)); sum += c; ++cnt; } });
+                    pMean = std::max (pMean, std::abs (sum / std::max (1, cnt)));
+                }
+            }
+        const double size = got[1] - got[0];
+        std::printf ("  amount +-%.0f %%: move vs true: down %.0f %%, up %.0f %%; peak %.2f; pitch mean %.2f c, transient %.1f c\n",
+                     100 * depth, 100 * got[0] / want[0], 100 * got[1] / want[1], worst, pMean, pWorst);
+        CHECK (got[0] < 0 && got[1] > 0);
+        CHECK (got[0] / want[0] > 0.5 && got[0] / want[0] < 1.6);
+        CHECK (got[1] / want[1] > 0.5 && got[1] / want[1] < 1.6);
+        CHECK (size > prev); // monotonic in the amount
+        CHECK (worst < 1.0); // stays bounded at +-25 % (inputs peak ~0.3)
+        CHECK (pMean < 0.5);
+        prev = size;
+    }
+    FormantAccent fa;
+    fa.setDepth (std::numeric_limits<double>::quiet_NaN()); fa.setDepth (0.9); fa.setDepth (-1); // clamped, never NaN
+}
+
+TEST (strike_length_sets_the_accent_duration)
+{
+    // One accent per length: active time = length + up to one 2 ms coefficient update; peak at ~3 ms
+    // whatever the length; no clicks and pitch kept with the longest, strongest setting.
+    const double sr = 48000;
+    auto x = vowel (sr, 180.0, 700.0, 0.8);
+    for (double len : { 0.025, 0.050, 0.100 })
+    {
+        FormantAccent fa; fa.prepare (sr); fa.setEnabled (true); fa.setDepth (0.25); fa.setLength (len);
+        std::vector<float> y = x;
+        int active = 0, peakAt = 0; double peak = 0;
+        for (size_t n = 0; n < y.size(); ++n)
+        {
+            if (n == size_t (0.3 * sr)) fa.trigger (+1);
+            if (n == size_t (0.3 * sr) + 48) fa.setLength (len == 0.1 ? 0.025 : 0.1); // ignored by the running accent
+            float* io[1] { y.data() + n };
+            fa.process (io, 1, 1);
+            if (fa.isActive()) { ++active; if (std::abs (fa.accent()) > peak) { peak = std::abs (fa.accent()); peakAt = active; } }
+        }
+        double maxStepX = 0, maxStepY = 0;
+        for (size_t n = 1; n < x.size(); ++n)
+        {
+            maxStepX = std::max (maxStepX, double (std::abs (x[n] - x[n - 1])));
+            maxStepY = std::max (maxStepY, double (std::abs (y[n] - y[n - 1])));
+        }
+        const double ms = 1000.0 * active / sr;
+        std::printf ("  length %3.0f ms: active %.1f ms, peak at %.1f ms; max step in %.3f out %.3f\n", 1000 * len, ms, 1000.0 * peakAt / sr, maxStepX, maxStepY);
+        CHECK (ms >= 1000 * len && ms <= 1000 * len + 2.1);
+        CHECK_NEAR (1000.0 * peakAt / sr, 3.0, 0.2);
+        CHECK (maxStepY < 1.5 * maxStepX);
+    }
+    FormantAccent fa;
+    fa.setLength (std::numeric_limits<double>::quiet_NaN()); fa.setLength (5.0); fa.setLength (-1); // clamped, never NaN
+}
+
 TEST (strike_is_seamless_and_bounded)
 {
     const double sr = 48000;
     auto x = vowel (sr, 180.0, 700.0, 1.0);
     int longest = 0;
     // Rapid retriggers in alternating directions (worst case), then silence after.
-    auto y = runAccent (x, sr, { { 0.30, +1 }, { 0.31, -1 }, { 0.318, +1 }, { 0.6, -1 } }, &longest);
+    for (double depth : { 0.04, 0.25 })
+    {
+    auto y = runAccent (x, sr, { { 0.30, +1 }, { 0.31, -1 }, { 0.318, +1 }, { 0.6, -1 } }, &longest, depth);
     double maxStepX = 0, maxStepY = 0, eX = 0, eY = 0, maxDiffOutside = 0;
     for (size_t n = 1; n < x.size(); ++n)
     {
@@ -1008,12 +1088,13 @@ TEST (strike_is_seamless_and_bounded)
         if (t < 0.30 || (t > 0.36 && t < 0.6) || t > 0.64) maxDiffOutside = std::max (maxDiffOutside, double (std::abs (y[n] - x[n])));
     }
     const double levelDb = 10 * std::log10 (eY / eX);
-    std::printf ("  max step in %.4f out %.4f; level during accents %+.2f dB; max diff outside accents %.2g; longest active %.1f ms\n",
-                 maxStepX, maxStepY, levelDb, maxDiffOutside, 1000.0 * longest / sr);
+    std::printf ("  +-%.0f %%: max step in %.4f out %.4f; level during accents %+.2f dB; max diff outside accents %.2g; longest active %.1f ms\n",
+                 100 * depth, maxStepX, maxStepY, levelDb, maxDiffOutside, 1000.0 * longest / sr);
     CHECK (maxStepY < 1.3 * maxStepX);        // no clicks
     CHECK (std::abs (levelDb) < 1.0);         // no level bump
     CHECK (maxDiffOutside == 0.0);            // bit-exact passthrough between accents
     CHECK (longest < int (0.050 * sr));       // accent ends (25 ms + coefficient ramp + retriggers)
+    }
     // Disabled: triggers are ignored, output is the input.
     FormantAccent off; off.prepare (sr);
     std::vector<float> z = x;

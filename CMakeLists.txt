@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(LyraTune VERSION 0.6.0 LANGUAGES C CXX)
+project(LyraTune VERSION 0.6.5 LANGUAGES C CXX)
 
 # Product naming lives here only; DSP code never refers to it.
 set(PRODUCT_NAME "Lyra Tune" CACHE STRING "User-visible plugin name")

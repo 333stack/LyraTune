@@ -29,7 +29,7 @@ The Speed knob has a definitive 0 ms notch and visibly "overloads" past it: the 
 - **Sustain:** retune speed follows note age to tighten or loosen held notes.
 - **HQ mode** (main menu): optional 2 ms detector lookahead for tighter tuning (+2 ms, reported to the host).
 - **Doubler:** two subtly detuned, drifting voices with Width and Blend for an instant double-track.
-- **LyraStrike:** make every note hit harder: a 25 ms formant accent on each note change (darker going up, brighter going down) — the tuned pitch is untouched and no latency is added.
+- **LyraStrike:** make every note hit harder: a 25 ms formant accent on each note change (darker going up, brighter going down), adjustable from ±1 % to ±25 % and from 25 to 100 ms — the tuned pitch is untouched and no latency is added.
 
 ### 🎵 Accurate Pitch Detection
 - **YIN-based pitch detection** for real-time vocal pitch tracking.

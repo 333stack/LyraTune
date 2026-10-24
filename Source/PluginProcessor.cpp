@@ -23,6 +23,8 @@ LyraTuneProcessor::LyraTuneProcessor()
     pDblWidth = apvts.getRawParameterValue (ParamID::doublerWidth);
     pDblBlend = apvts.getRawParameterValue (ParamID::doublerBlend);
     pStrike = apvts.getRawParameterValue (ParamID::strike);
+    pStrikeAmount = apvts.getRawParameterValue (ParamID::strikeAmount);
+    pStrikeLength = apvts.getRawParameterValue (ParamID::strikeLength);
     for (int pc = 0; pc < 12; ++pc)
         pNotes[pc] = apvts.getRawParameterValue (ParamID::note (pc));
     chain.setTelemetryQueue (&telemetry);
@@ -77,6 +79,8 @@ void LyraTuneProcessor::process (juce::AudioBuffer<float>& buffer, bool forceByp
     s.doubler.width = pDblWidth->load() / 100.0f;
     s.doubler.blend = pDblBlend->load() / 100.0f;
     s.strike = pStrike->load() > 0.5f;
+    s.strikeDepth = pStrikeAmount->load() / 100.0;
+    s.strikeLength = pStrikeLength->load() / 1000.0;
     s.bypass = forceBypass || pBypass->load() > 0.5f;
     chain.setSettings (s);
     chain.process (buffer.getArrayOfWritePointers(), numCh, buffer.getNumSamples());
