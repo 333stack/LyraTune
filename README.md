@@ -58,3 +58,35 @@ LyraTune is a real-time pitch-correction plugin designed to deliver responsive v
 
 - **Lead design and engineering:** stack
 - **Development assistance:** Claude (AI assistant)
+
+## Download & Install
+
+Get `LyraTune-0.1.0-win-x64-vst3.zip` from the [Releases](https://github.com/333stack/LyraTune/releases) page.
+
+- **Windows:** unzip and copy the `Lyra Tune.vst3` folder to `C:\Program Files\Common Files\VST3\`, then rescan plugins in your DAW.
+- **Linux (Windows DAW under Wine):** copy it to the same folder inside the DAW's Wine prefix:
+  `<prefix>/drive_c/Program Files/Common Files/VST3/`.
+
+Format: VST3, Windows x64. Verify downloads with `SHA256SUMS.txt`.
+
+## Build from Source
+
+Cross-compiled on Linux with clang-cl + lld and `xwin`:
+
+```sh
+git clone --recursive https://github.com/333stack/LyraTune.git && cd LyraTune
+xwin --accept-license --arch x86_64 --cache-dir ~/.cache/xwin splat --output ~/.local/share/xwin
+scripts/setup-xwin-aliases.sh
+scripts/build.sh      # -> build/win-release/LyraTune_artefacts/Release/VST3/Lyra Tune.vst3
+scripts/test.sh       # native unit tests
+```
+
+## Documentation
+
+Full user guide, DSP design, latency tables, measurements, known limitations and roadmap:
+**[LyraTune.md](LyraTune.md)**.
+
+## License
+
+GNU Affero General Public License v3 — see [LICENSE](LICENSE).
+Third-party components and notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
