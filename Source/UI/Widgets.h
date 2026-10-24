@@ -59,4 +59,5 @@ class ValueStrip : public juce::Slider
 public:
     ValueStrip();
     void paint (juce::Graphics&) override;
+    bool fillFromLeft = false; // default: fill from the centre (bipolar values such as pitch reference)
 };

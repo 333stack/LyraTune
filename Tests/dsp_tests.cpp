@@ -7,6 +7,7 @@
 #include "Pitch/CorrectionEngine.h"
 #include "Common/FixedDelay.h"
 #include "TunerChain.h"
+#include "Doubler.h"
 #include <atomic>
 #include <new>
 
@@ -18,6 +19,8 @@
 using namespace lyra;
 
 // Global allocation counter: lets tests assert the real-time path never allocates.
+// (malloc/free pairs are correct here; GCC's mismatched-new-delete check cannot see that.)
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
 static std::atomic<long> gAllocs { 0 };
 void* operator new (size_t n) { ++gAllocs; if (void* p = std::malloc (n ? n : 1)) return p; throw std::bad_alloc(); }
 void* operator new[] (size_t n) { ++gAllocs; if (void* p = std::malloc (n ? n : 1)) return p; throw std::bad_alloc(); }
@@ -621,6 +624,143 @@ TEST (end_to_end_correction)
     CHECK (std::abs (errC) < 3.0);
 }
 
+
+// ---------- HQ mode ----------
+// Runs a stereo-identical signal through a chain; returns the left output.
+static std::vector<float> runChain (const std::vector<float>& in, TunerChain::Settings s, double sr = 48000, int block = 64)
+{
+    TunerChain chain; chain.prepare (sr, 70.0);
+    chain.setSettings (s); chain.reset();
+    std::vector<float> L = in, R = in;
+    for (size_t n = 0; n < L.size(); n += size_t (block))
+    {
+        const int len = int (std::min (size_t (block), L.size() - n));
+        float* io[2] { L.data() + n, R.data() + n };
+        chain.setSettings (s);
+        chain.process (io, 2, len);
+    }
+    return L;
+}
+
+TEST (hq_latency_and_alignment)
+{
+    const double sr = 48000;
+    for (double minF : { 70.0, 150.0 })
+    {
+        TunerChain::Settings s; s.minFreq = minF; s.correction.amount = 0; // ratio 1: wet = pure delay
+        TunerChain a; a.prepare (sr, 70.0);
+        s.hq = true; a.setSettings (s); a.reset();
+        CHECK (a.latencySamples() == TunerChain::latencyFor (sr, minF, true));
+        CHECK (TunerChain::latencyFor (sr, minF, true) - TunerChain::latencyFor (sr, minF, false) == 96);
+        // With HQ on, wet output must equal the input delayed by exactly the reported latency.
+        auto x = tone (sr, 220.0, 0.3, true);
+        auto y = runChain (x, s);
+        const size_t L = size_t (a.latencySamples());
+        double maxErr = 0;
+        for (size_t n = L + 4800; n < x.size(); ++n) maxErr = std::max (maxErr, double (std::abs (y[n] - x[n - L])));
+        CHECK (maxErr < 1e-5);
+    }
+}
+
+TEST (hq_tracks_glides_better)
+{
+    // Off-key glide (vocal-like scoop between notes): HQ must leave less residual error at Speed 0.
+    const double sr = 48000;
+    std::vector<float> x (size_t (sr * 1.5));
+    double ph = 0;
+    for (size_t n = 0; n < x.size(); ++n)
+    {
+        const double t = double (n) / sr;
+        const double midi = 57.3 + 2.0 * std::sin (2 * kPi * 0.8 * t); // slow 4-semitone swing
+        ph += 2 * kPi * midiToFreq (midi) / sr;
+        double v = 0;
+        for (int h = 1; h <= 8; ++h) v += std::sin (h * ph) / h;
+        x[n] = float (0.25 * v);
+    }
+    auto residual = [&] (bool hq) {
+        TunerChain::Settings s; s.correction.speedMs = 0; s.minFreq = 150; s.hq = hq;
+        auto y = runChain (x, s);
+        YinDetector d; d.prepare (sr, {});
+        std::vector<double> err;
+        d.process (y.data() + int (sr * 0.2), int (y.size()) - int (sr * 0.2), [&] (int, const PitchEstimate& e) {
+            if (e.voiced) { const double m = freqToMidi (e.frequency); err.push_back (std::abs (100.0 * (m - std::round (m)))); } });
+        std::sort (err.begin(), err.end());
+        return err[err.size() * 9 / 10];
+    };
+    const double off = residual (false), on = residual (true);
+    std::printf ("  glide p90 residual: HQ off %.1f c, HQ on %.1f c\n", off, on);
+    CHECK (on < off);
+}
+
+// ---------- doubler ----------
+TEST (doubler_off_is_bit_exact)
+{
+    auto x = tone (48000, 233.0, 0.4, true);
+    TunerChain::Settings s; s.correction.speedMs = 10;
+    auto a = runChain (x, s);
+    s.doubler.width = 1.0f; s.doubler.blend = 1.0f; // parameters set but disabled
+    auto b = runChain (x, s);
+    CHECK (a == b);
+}
+
+TEST (doubler_voices_detuned_late_and_wide)
+{
+    const double sr = 48000;
+    Doubler d; d.prepare (sr);
+    Doubler::Params p; p.enabled = true; p.width = 1.0f; p.blend = 1.0f; d.setParams (p); d.reset();
+    d.setPeriod (sr / 220.0);
+    // Feed a click train + tone; isolate voices by subtracting the scaled main (0.7 x input).
+    auto x = tone (sr, 220.0, 1.2, false);
+    std::vector<float> L = x, R = x;
+    for (size_t n = 0; n < x.size(); n += 64)
+    {
+        float* io[2] { L.data() + n, R.data() + n };
+        d.process (io, 2, int (std::min<size_t> (64, x.size() - n)));
+    }
+    std::vector<float> vl (x.size()), vr (x.size());
+    for (size_t n = 0; n < x.size(); ++n) { vl[n] = L[n] - 0.7f * x[n]; vr[n] = R[n] - 0.7f * x[n]; }
+    // With width 1, left holds voice 1 (-8 c) and right voice 2 (+6 c), each +-3 c wobble.
+    const double cl = 1200.0 * std::log2 (medianPitch (vl, sr, 100) / 220.0);
+    const double cr = 1200.0 * std::log2 (medianPitch (vr, sr, 100) / 220.0);
+    std::printf ("  voice detune: L %.1f c, R %.1f c\n", cl, cr);
+    CHECK_NEAR (cl, -8.0, 3.5);
+    CHECK_NEAR (cr, 6.0, 3.5);
+    // L and R must be decorrelated (not the same waveform panned).
+    double sxy = 0, sxx = 0, syy = 0;
+    for (size_t n = size_t (sr * 0.3); n < x.size(); ++n) { sxy += double (L[n]) * R[n]; sxx += double (L[n]) * L[n]; syy += double (R[n]) * R[n]; }
+    const double corr = sxy / std::sqrt (sxx * syy);
+    std::printf ("  L/R correlation at width 100 %%: %.3f\n", corr);
+    CHECK (corr < 0.95);
+}
+
+TEST (doubler_gain_stable_and_safe)
+{
+    const double sr = 48000;
+    auto x = tone (sr, 196.0, 0.8, true);
+    auto rmsDb = [&] (float blend, bool en) {
+        TunerChain::Settings s; s.correction.amount = 0; s.doubler.enabled = en; s.doubler.blend = blend; s.doubler.width = 0.7f;
+        auto y = runChain (x, s);
+        double e = 0; size_t cnt = 0;
+        for (size_t n = size_t (sr * 0.3); n < y.size(); ++n, ++cnt) e += double (y[n]) * y[n];
+        return 10.0 * std::log10 (e / double (cnt));
+    };
+    const double ref = rmsDb (0.0f, false);
+    for (float b : { 0.25f, 0.5f, 1.0f })
+    {
+        const double dB = rmsDb (b, true) - ref;
+        std::printf ("  blend %.0f %%: %+.2f dB\n", b * 100, dB);
+        CHECK (std::abs (dB) < 2.0);
+    }
+    // Non-finite parameters and huge input stay finite.
+    Doubler d; d.prepare (sr);
+    Doubler::Params p; p.enabled = true; p.width = std::numeric_limits<float>::quiet_NaN(); p.blend = 7.0f; d.setParams (p);
+    d.setPeriod (-1);
+    std::vector<float> big (64, 1e6f);
+    float* io[1] { big.data() };
+    d.process (io, 1, 64);
+    for (float v : big) CHECK (std::isfinite (v));
+}
+
 // ---------- full chain ----------
 TEST (chain_rt_no_alloc_and_switching)
 {
@@ -639,6 +779,8 @@ TEST (chain_rt_no_alloc_and_switching)
         s.minFreq = (b / 100) % 2 ? 150.0 : 100.0;     // switch range every ~133 ms
         if (b == 300) s.correction.speedMs = -3;
         if (b == 500) { s.correction.stabilizerMs = 80; s.correction.sustain = 0.7; s.correction.speedMs = 30; }
+        if (b == 550) { s.doubler.enabled = true; s.doubler.blend = 0.6f; s.hq = true; }
+        if (b == 650) s.hq = false;
         chain.setSettings (s);
         float* io[2] { L.data() + n, R.data() + n };
         chain.process (io, 2, 64);

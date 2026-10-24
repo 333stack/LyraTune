@@ -71,7 +71,9 @@ Status levels: **Implemented** (code exists) · **Unit-tested** · **Measured** 
 | Undo / Redo, Reset All, A/B snapshots | Implemented |
 | GUI scaling 75–150 %, tooltips | Implemented |
 | Versioned state save/restore | Implemented (project reload not yet verified in a host) |
-| Doubler, presets, groups, reference tone | Planned (§15) |
+| HQ mode (2 ms detector lookahead) | Unit-tested, measured |
+| Doubler (two drifting, detuned voices; Width, Blend) | Unit-tested, measured, host-tested (visual) |
+| Presets, groups, reference tone | Planned (§15) |
 
 ---
 
@@ -177,6 +179,10 @@ Parameter IDs are stable and must never be renamed — saved projects and automa
 | `stabilizer` | Note Stabilizer | None, Short (40 ms), Mid (80 ms), Long (200 ms) | None | yes |
 | `sustain` | Sustain | −100 … +100 | 0 | yes |
 | `range` | Range | Low (70 Hz), Mid (100 Hz), High (150 Hz) | Low | **no** — it changes latency |
+| `hq` | HQ Mode | off / on (+2 ms latency) | off | **no** — it changes latency |
+| `doubler` | Doubler | off / on | off | yes |
+| `dblWidth` | Doubler Width | 0 … 100 % | 70 % | yes |
+| `dblBlend` | Doubler Blend | 0 … 100 % | 50 % | yes |
 
 Display preferences (HeatMaps, Detected Notes, tooltips, window size) are saved with the project but
 are not parameters.
@@ -398,7 +404,7 @@ A native Linux VST3 is a different binary and will not load in a Windows DAW run
 
 ## 12. Testing and measurements
 
-### Automated tests (`scripts/test.sh`) — 30 tests, all passing; ASan/UBSan clean
+### Automated tests (`scripts/test.sh`) — 35 tests, all passing; ASan/UBSan clean
 - Frequency ↔ MIDI conversion, reference pitch, cents error.
 - Scale masks, transposition, nearest allowed note, ties, hysteresis, mask changes, empty mask.
 - YIN on sines 80–880 Hz at 44.1 / 48 / 88.2 / 96 / 192 kHz: max error < 3 cents, > 99 % voiced.
@@ -462,7 +468,6 @@ change, automation of every parameter, multiple instances, window resizing insid
 - `Tools/analyze_vocal` — pitch range, tuning offset, key estimate (Krumhansl–Kessler profiles),
   octave-jump count, optional per-hop CSV.
 - `Tools/render_tuner` — renders audio through the exact plugin signal path, latency-aligned.
-- `Tools/ui_snapshot` — renders the real editor to PNG under Wine with a synthetic test tone.
 
 ```sh
 ffmpeg -v error -i vocal.wav -ac 1 -f f32le - | build/tests/analyze_vocal 48000 150
@@ -477,18 +482,19 @@ ffmpeg -v error -i vocal.wav -ac 2 -f f32le - | build/tests/render_tuner 48000 0
 ## 13. Project structure
 
 ```
-CMakeLists.txt              plugin target, product name, binary assets, ui_snapshot tool
+CMakeLists.txt              plugin target, product name, binary assets
 cmake/windows-x64-clang-cl.cmake   cross-compile toolchain
 Source/
   PluginProcessor.*         host integration, parameters, latency reporting, state, A/B, undo
   PluginEditor.*            window layout, telemetry draining, header actions
   Parameters.h              stable parameter IDs, ranges, defaults
   DSP/TunerChain.*          complete real-time signal path
+  DSP/Doubler.*             two-voice doubler
   DSP/Pitch/                YinDetector, TargetSelector, CorrectionEngine, PitchShifter, Scale, PitchMath
   DSP/Common/               Biquad, FixedDelay, SpscQueue
   UI/                       Theme, LookAndFeel, Knob, Orb, KeyboardPanel, Widgets
 Tests/                      native unit tests (+ smoke/ Windows DLL load test)
-Tools/                      analyze_vocal, render_tuner, ui_snapshot
+Tools/                      analyze_vocal, render_tuner
 Resources/fonts/            Inter (SIL OFL 1.1)
 scripts/                    build, test, install, xwin setup, smoke build
 licenses/                   third-party license texts
@@ -513,15 +519,25 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 
 ## 15. Roadmap
 
-1. **Doubler** — two derived voices with small pitch/timing offsets, width and blend.
-2. **Presets** — factory and user presets, folders, "keep my scale".
-3. **Reference tone** — notes and chords at the reference pitch.
-4. **Groups** — shared settings across instances.
-5. High-quality mode (small lookahead), formant preservation, pitch-history view.
+1. **Presets** — factory and user presets, folders, "keep my scale".
+2. **Reference tone** — notes and chords at the reference pitch.
+3. **Groups** — shared settings across instances.
+4. Formant preservation, pitch-history view.
 
 ---
 
 ## 16. Changelog
+
+### Unreleased
+- **HQ mode** (pill beside the latency readout): the pitch detector looks 2 ms ahead of the shifter.
+  Test vocal at Speed 0: 90th-percentile error 15.1 → 9.9 cents; latency +2 ms (3.6 → 5.6 ms).
+- **Doubler**: two voices built from the tuned signal, each with its own slowly drifting delay and
+  small detune (about −8 / +6 cents), panned by **Width** and mixed in by **Blend**. Off = output unchanged.
+  The orb shows the voices as satellites.
+- Interface: Scale, Stabilizer and Range sit in subtle glass sections with hairline dividers; the Doubler
+  and Latency/HQ blocks are framed the same way; selected options get a soft glow.
+- Fix: a freshly opened editor could start at 75 % instead of its saved size.
+- 35 automated tests.
 
 ### 0.2.0 — 2026-10-23
 - **Note Stabilizer** (None / Short 40 ms / Mid 80 ms / Long 200 ms): new notes must hold before they

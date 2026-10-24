@@ -3,7 +3,7 @@
 //   ffmpeg -v error -i in.wav -ac 2 -f f32le - | build/tests/render_tuner 48000 0 100 0 1 2 \
 //     | ffmpeg -v error -f f32le -ar 48000 -ac 2 -i - out.wav
 // args: sampleRate speedMs amount% root(0=C..11) scale(0 chromatic,1 major,2 minor) range(0 low,1 mid,2 high)
-//       [refHz] [stabilizerMs] [sustain -100..100]
+//       [refHz] [stabilizerMs] [sustain -100..100] [hq 0/1] [doubler blend % (0 = off)]
 // stderr reports target-note changes per minute and stabilizer holds (from the chain's telemetry).
 // Output is shifted earlier by the reported latency so it lines up with the input file.
 #include "TunerChain.h"
@@ -27,6 +27,8 @@ int main (int argc, char** argv)
     if (argc > 7) s.correction.referenceHz = std::atof (argv[7]);
     if (argc > 8) s.correction.stabilizerMs = std::atof (argv[8]);
     if (argc > 9) s.correction.sustain = std::atof (argv[9]) / 100.0;
+    if (argc > 10) s.hq = std::atoi (argv[10]) != 0;
+    if (argc > 11) { s.doubler.blend = float (std::atof (argv[11]) / 100.0); s.doubler.enabled = s.doubler.blend > 0; }
     static lyra::TelemetryQueue telemetry; // static: large, keep off the stack
     chain.setTelemetryQueue (&telemetry);
     long switches = 0, holds = 0, voicedHops = 0;

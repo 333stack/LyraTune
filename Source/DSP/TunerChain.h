@@ -1,6 +1,7 @@
 #pragma once
 #include "Common/FixedDelay.h"
 #include "Common/SpscQueue.h"
+#include "Doubler.h"
 #include "Pitch/CorrectionEngine.h"
 #include "Pitch/PitchShifter.h"
 #include "Pitch/YinDetector.h"
@@ -9,8 +10,10 @@ namespace lyra
 {
 // The complete real-time tuner signal path, independent of any plugin framework so the plugin and
 // the offline render/test tools run identical code:
-//   mono sum -> YinDetector -> CorrectionEngine -> PitchShifter (stereo-linked)
-//   dry path delayed by the same latency; bypass = 10 ms linear crossfade between the two.
+//   mono sum -> YinDetector -> CorrectionEngine -> PitchShifter (stereo-linked) -> Doubler
+//   HQ mode: the shifter's input is delayed by kLookaheadSeconds while the detector hears it
+//   undelayed, so corrections land on time (adds that much reported latency).
+//   dry path delayed by the same total latency; bypass = 10 ms linear crossfade between the two.
 //
 // One display sample per detector hop, sent to the UI through a lock-free queue.
 struct Telemetry
@@ -30,12 +33,16 @@ class TunerChain
 public:
     static constexpr int kSubBlock = 32; // control-rate granularity (0.67 ms @48 kHz)
     static constexpr int kMaxChannels = 2;
+    static constexpr double kLookaheadSeconds = 0.002; // HQ mode
+    static_assert (kSubBlock <= Doubler::kMaxBlock);
 
     struct Settings
     {
         CorrectionEngine::Params correction;
         double minFreq = 70.0; // range floor: sets detector frame and shifter latency
+        bool hq = false;       // 2 ms detector lookahead (+2 ms latency)
         bool bypass = false;
+        Doubler::Params doubler;
     };
 
     void prepare (double sampleRate, double lowestMinFreq);
@@ -43,8 +50,12 @@ public:
     void setSettings (const Settings&) noexcept; // call once per block
     void process (float* const* channels, int numChannels, int numSamples) noexcept;
 
-    int latencySamples() const noexcept { return shifter.latencySamples(); }
-    static int latencyFor (double sampleRate, double minFreq) noexcept { return PitchShifter::latencyFor (sampleRate, minFreq); }
+    int latencySamples() const noexcept { return shifter.latencySamples() + (hq ? lookahead : 0); }
+    static int lookaheadFor (double sampleRate) noexcept { return int (std::lround (kLookaheadSeconds * sampleRate)); }
+    static int latencyFor (double sampleRate, double minFreq, bool hq = false) noexcept
+    {
+        return PitchShifter::latencyFor (sampleRate, minFreq) + (hq ? lookaheadFor (sampleRate) : 0);
+    }
 
     // Optional; the queue must outlive the chain. Set before processing starts.
     void setTelemetryQueue (TelemetryQueue* q) noexcept { telemetry = q; }
@@ -56,7 +67,10 @@ private:
     YinDetector yin;
     CorrectionEngine engine;
     PitchShifter shifter;
-    FixedDelay dryDelay;
+    FixedDelay dryDelay, aheadDelay;
+    Doubler doubler;
+    int lookahead = 0;
+    bool hq = false;
     TelemetryQueue* telemetry = nullptr;
     double sr = 48000, minFreq = 70;
     float wet = 1, wetTarget = 1, wetStep = 0.01f;

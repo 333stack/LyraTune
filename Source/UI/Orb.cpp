@@ -117,6 +117,26 @@ void Orb::paint (juce::Graphics& g)
     g.setGradientFill (juce::ColourGradient (bg0.withAlpha (0.0f), c.x, c.y, bg0.withAlpha (0.55f), c.x + rout, c.y, true));
     g.fillEllipse (c.x - rout, c.y - rout, 2 * rout, 2 * rout);
 
+    // Doubler: two satellite voices beside the core; spread = width, size/brightness = blend.
+    const float dblTarget = (dblOn && ! bypassed) ? 1.0f : 0.0f;
+    dblFade += (dblTarget - dblFade) * 0.15f; // eased fade in/out at the editor frame rate
+    if (dblFade > 0.01f)
+    {
+        const float tsec = float (juce::Time::getMillisecondCounter() % 100000) * 0.001f;
+        for (int side : { -1, 1 })
+        {
+            const float wob = 0.03f * std::sin (tsec * (side < 0 ? 1.7f : 2.3f));
+            const float dist = rm * (0.82f + 0.34f * dblWidth) * (1.0f + wob);
+            const float rr = R * (0.045f + 0.045f * dblBlend) * (0.85f + 0.3f * state.level * pres);
+            const juce::Point<float> p (c.x + float (side) * dist, c.y + R * 0.02f * std::sin (tsec * 1.3f + float (side)));
+            const auto col = side < 0 ? pink : blue;
+            g.setGradientFill (juce::ColourGradient (col.withAlpha (0.85f * dblFade), p.x, p.y, col.withAlpha (0.0f), p.x + rr * 2.6f, p.y, true));
+            g.fillEllipse (p.x - rr * 2.6f, p.y - rr * 2.6f, rr * 5.2f, rr * 5.2f);
+            g.setColour (col.interpolatedWith (juce::Colours::white, 0.5f).withAlpha ((0.75f + 0.25f * dblBlend) * dblFade));
+            g.fillEllipse (p.x - rr, p.y - rr, 2 * rr, 2 * rr);
+        }
+    }
+
     // Correction arc: detected pitch -> corrected pitch on the middle ring.
     if (pres > 0.01f && state.voiced)
     {

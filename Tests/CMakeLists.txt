@@ -12,7 +12,8 @@ add_executable(dsp_tests
     ${DSP}/Pitch/YinDetector.cpp
     ${DSP}/Pitch/PitchShifter.cpp
     ${DSP}/Pitch/CorrectionEngine.cpp
-    ${DSP}/TunerChain.cpp)
+    ${DSP}/TunerChain.cpp
+    ${DSP}/Doubler.cpp)
 target_include_directories(dsp_tests PRIVATE ${DSP})
 target_compile_options(dsp_tests PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wno-sign-conversion)
 
@@ -27,5 +28,5 @@ target_include_directories(analyze_vocal PRIVATE ${DSP})
 
 add_executable(render_tuner ${CMAKE_CURRENT_SOURCE_DIR}/../Tools/render_tuner.cpp
     ${DSP}/Pitch/TargetSelector.cpp ${DSP}/Pitch/YinDetector.cpp ${DSP}/Pitch/PitchShifter.cpp
-    ${DSP}/Pitch/CorrectionEngine.cpp ${DSP}/TunerChain.cpp)
+    ${DSP}/Pitch/CorrectionEngine.cpp ${DSP}/TunerChain.cpp ${DSP}/Doubler.cpp)
 target_include_directories(render_tuner PRIVATE ${DSP})

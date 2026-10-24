@@ -27,4 +27,13 @@ inline juce::Colour accentAt (float t)
 }
 
 juce::Font font (float height, bool semibold = false);
+
+// Section system: shared structure so every group of settings reads the same way.
+// Hairline that fades out at both ends, with a faint lavender core.
+void drawHairline (juce::Graphics&, juce::Point<float> from, juce::Point<float> to, float alpha = 0.10f);
+// Barely-there glass well: whisper of fill + a rim lit at the top, fading toward the bottom.
+void drawSectionPanel (juce::Graphics&, juce::Rectangle<float> area, float radius = 10.0f);
+// Quiet "selected" treatment for a pill: soft halo, faint tint, glassy top highlight.
+// Intentionally far below the dramatic effects (overload, orb); `strength` 0..1 scales it further.
+void drawSelectionGlow (juce::Graphics&, juce::Rectangle<float> pill, juce::Colour tint = violet, float strength = 1.0f);
 } // namespace theme

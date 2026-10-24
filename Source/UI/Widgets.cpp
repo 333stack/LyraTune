@@ -81,6 +81,8 @@ void IconButton::paintButton (juce::Graphics& g, bool hi, bool down)
         g.fillRoundedRectangle (r.reduced (1.0f), 5.0f);
     }
     const bool on = getToggleState();
+    if (on && caption.isNotEmpty() && isEnabled()) // captioned setting toggles: quiet selected treatment
+        drawSelectionGlow (g, r.reduced (2.0f, 3.0f), onColour, 0.55f);
     const auto col = ! isEnabled() ? textFaint : (on ? onColour : (hi ? theme::text : textDim));
     auto iconArea = caption.isEmpty() ? r : r.removeFromLeft (r.getHeight());
     const float s = juce::jmin (iconArea.getWidth(), iconArea.getHeight()) * 0.62f;
@@ -100,8 +102,17 @@ void PillButton::paintButton (juce::Graphics& g, bool hi, bool)
     using namespace theme;
     const auto r = getLocalBounds().toFloat().reduced (1.0f, 4.0f);
     const bool on = getToggleState();
-    g.setColour (on ? violet.withAlpha (0.25f) : (hi ? bg3 : juce::Colours::transparentBlack));
-    g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+    if (on)
+    {
+        g.setColour (bg3);
+        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+        drawSelectionGlow (g, r);
+    }
+    else if (hi)
+    {
+        g.setColour (bg3);
+        g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+    }
     g.setColour (on ? lavender : (hi ? theme::text : textDim));
     g.setFont (font (14.0f, true));
     g.drawText (getButtonText(), r, juce::Justification::centred);
@@ -118,17 +129,21 @@ SegmentedControl::SegmentedControl (juce::RangedAudioParameter& p, juce::StringA
 void SegmentedControl::paint (juce::Graphics& g)
 {
     using namespace theme;
-    const auto r = getLocalBounds().toFloat();
-    g.setColour (bg0);
+    // Inset track; the halo of the selected pill needs a little room, so the track is inset 2 px.
+    const auto r = getLocalBounds().toFloat().reduced (2.0f);
+    g.setColour (bg0.withAlpha (0.85f));
     g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+    g.setColour (juce::Colours::black.withAlpha (0.35f)); // inner shadow line: reads as recessed
+    g.drawRoundedRectangle (r.reduced (0.5f), r.getHeight() * 0.5f, 1.0f);
     const float w = r.getWidth() / float (labels.size());
     for (int i = 0; i < labels.size(); ++i)
     {
-        const auto cellR = juce::Rectangle<float> (r.getX() + w * float (i), r.getY(), w, r.getHeight()).reduced (2.5f);
+        const auto cellR = juce::Rectangle<float> (r.getX() + w * float (i), r.getY(), w, r.getHeight()).reduced (2.0f);
         if (i == selected)
         {
             g.setGradientFill (juce::ColourGradient (bg3.brighter (0.15f), cellR.getX(), cellR.getY(), bg3, cellR.getX(), cellR.getBottom(), false));
             g.fillRoundedRectangle (cellR, cellR.getHeight() * 0.5f);
+            drawSelectionGlow (g, cellR);
         }
         else if (i == hover)
         {
@@ -172,9 +187,12 @@ void ValueStrip::paint (juce::Graphics& g)
     g.setColour (bg0);
     g.fillRoundedRectangle (track, 2.0f);
     const float t = float (valueToProportionOfLength (getValue()));
-    const float mid = track.getCentreX(), x = track.getX() + t * track.getWidth();
-    g.setColour (violet);
-    g.fillRoundedRectangle (juce::Rectangle<float> (juce::jmin (mid, x), track.getY(), std::abs (x - mid) + 1.5f, track.getHeight()), 2.0f);
+    const float mid = fillFromLeft ? track.getX() : track.getCentreX(), x = track.getX() + t * track.getWidth();
+    const auto bar = juce::Rectangle<float> (juce::jmin (mid, x), track.getY(), std::abs (x - mid) + 1.5f, track.getHeight());
+    g.setColour (violet.withAlpha (0.16f)); // soft glow under the value bar
+    g.fillRoundedRectangle (bar.expanded (1.5f, 2.0f), 3.5f);
+    g.setGradientFill (juce::ColourGradient (violet.interpolatedWith (lavender, 0.25f), bar.getX(), bar.getY(), violet, bar.getX(), bar.getBottom(), false));
+    g.fillRoundedRectangle (bar, 2.0f);
     g.setColour (isMouseOverOrDragging() ? text : text.withAlpha (0.85f));
     g.setFont (font (14.0f, true));
     g.drawText (getTextFromValue (getValue()), r, juce::Justification::centred);

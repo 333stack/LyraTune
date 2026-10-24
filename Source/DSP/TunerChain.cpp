@@ -1,5 +1,6 @@
 #include "TunerChain.h"
 #include <algorithm>
+#include <cmath>
 
 namespace lyra
 {
@@ -12,8 +13,14 @@ void TunerChain::prepare (double sampleRate, double lowestMinFreq)
     yin.prepare (sr, cfg);
     engine.prepare (sr, yin.hopSamples() / sr);
     shifter.prepare (sr, kMaxChannels, lowestMinFreq);
-    // Sized for the largest latency; the active delay follows the shifter centre (see setSettings).
-    dryDelay.prepare (kMaxChannels, shifter.latencySamples(), int (0.005 * sr));
+    lookahead = lookaheadFor (sr);
+    // Sized for the largest latency (lowest range + HQ); the active delays follow the settings.
+    dryDelay.prepare (kMaxChannels, shifter.latencySamples() + lookahead, int (0.005 * sr));
+    aheadDelay.prepare (kMaxChannels, lookahead, int (0.005 * sr));
+    aheadDelay.setDelay (0);
+    hq = false;
+    dryDelay.setDelay (latencySamples());
+    doubler.prepare (sr);
     wetStep = float (1.0 / (0.010 * sr));
     reset();
 }
@@ -24,19 +31,27 @@ void TunerChain::reset() noexcept
     engine.reset();
     shifter.reset();
     dryDelay.reset();
+    aheadDelay.reset();
+    doubler.reset();
     wet = wetTarget;
 }
 
 void TunerChain::setSettings (const Settings& s) noexcept
 {
     engine.setParams (s.correction);
-    if (s.minFreq != minFreq)
+    if (s.minFreq != minFreq || s.hq != hq)
     {
-        minFreq = s.minFreq;
-        yin.setMinFreq (minFreq);
-        shifter.setMinFreq (minFreq);
-        dryDelay.setDelay (shifter.latencySamples());
+        if (s.minFreq != minFreq)
+        {
+            minFreq = s.minFreq;
+            yin.setMinFreq (minFreq);
+            shifter.setMinFreq (minFreq);
+        }
+        hq = s.hq;
+        aheadDelay.setDelay (hq ? lookahead : 0); // crossfaded inside FixedDelay: no click
+        dryDelay.setDelay (latencySamples());
     }
+    doubler.setParams (s.doubler);
     wetTarget = s.bypass ? 0.0f : 1.0f;
 }
 
@@ -68,6 +83,7 @@ void TunerChain::process (float* const* ch, int numCh, int total) noexcept
         yin.process (mono, n, [this] (int, const PitchEstimate& e) {
             engine.onEstimate (e);
             shifter.setPeriod (e.voiced ? sr / e.frequency : 0.0);
+            doubler.setPeriod (e.voiced ? sr / e.frequency : 0.0);
             if (telemetry != nullptr)
             {
                 Telemetry t;
@@ -84,7 +100,9 @@ void TunerChain::process (float* const* ch, int numCh, int total) noexcept
         for (int i = 0; i < n; ++i)
             ratio[i] = engine.nextRatio();
 
+        aheadDelay.process (io, numCh, n); // HQ lookahead (0 samples when off)
         shifter.process (io, numCh, n, ratio);
+        doubler.process (io, numCh, n);
         dryDelay.process (dryPtr, numCh, n);
 
         for (int i = 0; i < n; ++i)

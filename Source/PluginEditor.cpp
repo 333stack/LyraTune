@@ -6,6 +6,12 @@ namespace layout
 // Design-canvas coordinates (900 x 600).
 constexpr int headerH = 44;
 constexpr int rowY = 372, rowH = 40;
+// Section wells (drawn by the canvas; controls are laid out inside them).
+const juce::Rectangle<float> scaleWell { 6.0f, rowY + 4.0f, 322.0f, rowH - 8.0f };
+const juce::Rectangle<float> stabilizerWell { 334.0f, rowY + 4.0f, 290.0f, rowH - 8.0f };
+const juce::Rectangle<float> rangeWell { 630.0f, rowY + 4.0f, 264.0f, rowH - 8.0f };
+const juce::Rectangle<float> doublerFrame { 8.0f, 52.0f, 114.0f, 140.0f };
+const juce::Rectangle<float> latencyFrame { 8.0f, rowY - 42.0f, 224.0f, 38.0f };
 constexpr int keysX = 160, keysW = 600, keysY = 420, keysBottom = 592;
 constexpr int rightX = 772;
 } // namespace layout
@@ -27,7 +33,8 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
 
     for (auto* c : std::initializer_list<juce::Component*> { &orb, &speedKnob, &amountKnob, &sustainKnob, &scaleSeg, &stabilizerSeg, &rangeSeg, &keyboard, &refStrip,
                                                             &menuButton, &undoButton, &redoButton, &resetButton, &aButton, &copyButton, &bButton,
-                                                            &helpButton, &heatButton, &detectedButton, &bypassButton, &credit })
+                                                            &helpButton, &heatButton, &detectedButton, &bypassButton, &credit,
+                                                            &doublerButton, &widthStrip, &blendStrip, &hqButton })
         canvas.addAndMakeVisible (c);
 
     using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -37,6 +44,15 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     sustainKnob.setBipolar (true);
     sustainKnob.setDoubleClickReturnValue (true, 0.0);
     refAttach = std::make_unique<SA> (state, ParamID::referenceHz, refStrip);
+    widthAttach = std::make_unique<SA> (state, ParamID::doublerWidth, widthStrip);
+    blendAttach = std::make_unique<SA> (state, ParamID::doublerBlend, blendStrip);
+    for (auto* st : { &widthStrip, &blendStrip }) st->fillFromLeft = true;
+    widthStrip.setDoubleClickReturnValue (true, 70.0);
+    blendStrip.setDoubleClickReturnValue (true, 50.0);
+    doublerButton.setClickingTogglesState (true);
+    hqButton.setClickingTogglesState (true);
+    doublerAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (state, ParamID::doubler, doublerButton);
+    hqAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (state, ParamID::hq, hqButton);
     bypassButton.setClickingTogglesState (true);
     bypassButton.onColour = theme::pink;
     bypassAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (state, ParamID::bypass, bypassButton);
@@ -91,13 +107,20 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     heatButton.setTooltip ("Show HeatMaps");
     detectedButton.setTooltip ("Show detected notes");
     bypassButton.setTooltip ("Bypass");
+    doublerButton.setTooltip ("Two extra voices for a wider, thicker vocal.");
+    widthStrip.setTooltip ("Doubler stereo spread.");
+    blendStrip.setTooltip ("Doubler level.");
+    hqButton.setTooltip ("Tighter tracking. +2 ms latency.");
     menuButton.setTooltip ("Settings");
 
     updateTooltips();
+    // Capture the saved scale first: setResizeLimits() clamps the still-0x0 editor to the minimum size,
+    // and resized() would then overwrite ui.scale with 0.75.
+    const float initialScale = proc.ui.scale;
     setResizable (true, true);
     getConstrainer()->setFixedAspectRatio (double (kW) / kH);
     setResizeLimits (kW * 3 / 4, kH * 3 / 4, kW * 3 / 2, kH * 3 / 2);
-    setSize (juce::roundToInt (kW * proc.ui.scale), juce::roundToInt (kH * proc.ui.scale));
+    setSize (juce::roundToInt (kW * initialScale), juce::roundToInt (kH * initialScale));
     startTimerHz (60);
 }
 
@@ -144,9 +167,16 @@ void LyraTuneEditor::layout()
     amountKnob.setBounds (juce::Rectangle<int> (112, 112).withCentre ({ 818, 306 }));
     sustainKnob.setBounds (juce::Rectangle<int> (98, 98).withCentre ({ 652, 312 }));
 
-    scaleSeg.setBounds (60, rowY + 6, 264, rowH - 12);
-    stabilizerSeg.setBounds (408, rowY + 6, 212, rowH - 12);
-    rangeSeg.setBounds (682, rowY + 6, 204, rowH - 12);
+    // Doubler block, top-left of the orb panel (added after the orb, so it sits on top of its bounds).
+    // Section frames are drawn by the canvas from the same rectangles (layout::doublerFrame etc.).
+    doublerButton.setBounds (14, 56, 102, 28);
+    widthStrip.setBounds (18, 112, 96, 26);
+    blendStrip.setBounds (18, 158, 96, 26);
+    hqButton.setBounds (176, rowY - 38, 44, 30);
+
+    scaleSeg.setBounds (58, rowY + 5, 266, rowH - 10);
+    stabilizerSeg.setBounds (408, rowY + 5, 212, rowH - 10);
+    rangeSeg.setBounds (680, rowY + 5, 207, rowH - 10);
 
     keyboard.setBounds (keysX, keysY, keysW, keysBottom - keysY);
     rootArea = { 12, 470, 136, 116 };
@@ -205,17 +235,38 @@ void LyraTuneEditor::Canvas::paint (juce::Graphics& g)
     g.setColour (juce::Colours::black.withAlpha (0.6f));
     g.fillRect (0, rowY, kW, 1);
     g.fillRect (0, rowY + rowH - 1, kW, 1);
+    // Mode row sections: three glass wells, hairline dividers in the gaps between them.
+    for (auto w : { scaleWell, stabilizerWell, rangeWell })
+        drawSectionPanel (g, w, 9.0f);
+    for (float x : { (scaleWell.getRight() + stabilizerWell.getX()) * 0.5f, (stabilizerWell.getRight() + rangeWell.getX()) * 0.5f })
+        drawHairline (g, { x, rowY + 7.0f }, { x, rowY + rowH - 7.0f }, 0.16f);
     g.setColour (textDim);
     g.setFont (font (12.0f, true));
-    g.drawText ("Scale", 14, rowY, 44, rowH, juce::Justification::centredLeft);
-    g.drawText ("Stabilizer", 336, rowY, 70, rowH, juce::Justification::centredLeft);
-    g.drawText ("Range", 634, rowY, 46, rowH, juce::Justification::centredLeft);
-    // Latency readout lives in the main panel, bottom-left (latency-sensitive setting: keep it visible).
+    auto label = [&] (const char* t, juce::Rectangle<float> w, float width) {
+        g.drawText (t, juce::Rectangle<float> (w.getX() + 9.0f, w.getY(), width, w.getHeight()), juce::Justification::centredLeft);
+    };
+    label ("Scale", scaleWell, 44.0f);
+    label ("Stabilizer", stabilizerWell, 68.0f);
+    label ("Range", rangeWell, 46.0f);
+
+    // Doubler section: same well + a hairline between its title and its settings.
+    const bool dblOn = e.state.getRawParameterValue (ParamID::doubler)->load() > 0.5f;
+    drawSectionPanel (g, doublerFrame, 10.0f);
+    drawHairline (g, { doublerFrame.getX() + 10.0f, 90.0f }, { doublerFrame.getRight() - 10.0f, 90.0f }, dblOn ? 0.22f : 0.12f);
+    g.setColour (dblOn ? textDim : textFaint);
+    g.setFont (font (11.5f, true));
+    g.drawText ("Width", 18, 96, 96, 14, juce::Justification::centredLeft);
+    g.drawText ("Blend", 18, 142, 96, 14, juce::Justification::centredLeft);
+
+    // Latency section: readout | hairline | HQ toggle (latency-sensitive settings stay visible together).
+    drawSectionPanel (g, latencyFrame, 10.0f);
+    drawHairline (g, { 168.0f, latencyFrame.getY() + 8.0f }, { 168.0f, latencyFrame.getBottom() - 8.0f }, 0.16f);
+    g.setFont (font (12.0f, true));
     g.setColour (textDim);
-    g.drawText ("LATENCY", 18, rowY - 30, 60, 18, juce::Justification::centredLeft);
+    g.drawText ("LATENCY", 18, int (latencyFrame.getY()), 60, int (latencyFrame.getHeight()), juce::Justification::centredLeft);
     g.setColour (lavender);
     g.setFont (font (13.0f, true));
-    g.drawText (e.latencyText, 78, rowY - 30, 200, 18, juce::Justification::centredLeft);
+    g.drawText (e.latencyText, 78, int (latencyFrame.getY()), 88, int (latencyFrame.getHeight()), juce::Justification::centredLeft);
 
     // Bottom left column.
     g.setColour (bg2);
@@ -282,8 +333,15 @@ void LyraTuneEditor::timerCallback()
     copyButton.setTooltip (proc.getABSlot() == 0 ? "Copy A to B" : "Copy B to A");
 
     const int range = juce::jlimit (0, 2, int (state.getRawParameterValue (ParamID::range)->load()));
-    const auto lat = juce::String (proc.latencyMsFor (range), 1) + " ms added";
-    if (lat != latencyText) { latencyText = lat; canvas.repaint (0, layout::rowY - 32, 300, 22); }
+    const bool hq = state.getRawParameterValue (ParamID::hq)->load() > 0.5f;
+    const auto lat = juce::String (proc.latencyMsFor (range, hq), 1) + " ms added";
+    const bool dblOn = state.getRawParameterValue (ParamID::doubler)->load() > 0.5f;
+    orb.setDoubler (dblOn, state.getRawParameterValue (ParamID::doublerWidth)->load() / 100.0f,
+                    state.getRawParameterValue (ParamID::doublerBlend)->load() / 100.0f);
+    widthStrip.setAlpha (dblOn ? 1.0f : 0.45f);
+    blendStrip.setAlpha (dblOn ? 1.0f : 0.45f);
+    if (dblOn != lastDoublerOn) { lastDoublerOn = dblOn; canvas.repaint (layout::doublerFrame.toNearestInt().expanded (2)); }
+    if (lat != latencyText) { latencyText = lat; canvas.repaint (layout::latencyFrame.toNearestInt().expanded (2)); }
     canvas.repaint (0, layout::keysY + 40, layout::keysX, kH - layout::keysY - 40); // root letter / scale name
 }
 

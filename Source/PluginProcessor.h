@@ -35,7 +35,7 @@ public:
 
     // Allowed-note mask from root/scale/custom notes. Lock-free; callable from any thread.
     lyra::PitchClassMask currentMask() const noexcept;
-    double latencyMsFor (int rangeIndex) const noexcept;
+    double latencyMsFor (int rangeIndex, bool hq) const noexcept;
 
     // Editing workflow (message thread only).
     void resetAllParameters();
@@ -69,6 +69,10 @@ private:
     std::atomic<float>* pRange = nullptr;
     std::atomic<float>* pStabilizer = nullptr;
     std::atomic<float>* pSustain = nullptr;
+    std::atomic<float>* pHq = nullptr;
+    std::atomic<float>* pDoubler = nullptr;
+    std::atomic<float>* pDblWidth = nullptr;
+    std::atomic<float>* pDblBlend = nullptr;
     std::atomic<float>* pNotes[12] {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LyraTuneProcessor)

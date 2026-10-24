@@ -18,6 +18,10 @@ LyraTuneProcessor::LyraTuneProcessor()
     pRange = apvts.getRawParameterValue (ParamID::range);
     pStabilizer = apvts.getRawParameterValue (ParamID::stabilizer);
     pSustain = apvts.getRawParameterValue (ParamID::sustain);
+    pHq = apvts.getRawParameterValue (ParamID::hq);
+    pDoubler = apvts.getRawParameterValue (ParamID::doubler);
+    pDblWidth = apvts.getRawParameterValue (ParamID::doublerWidth);
+    pDblBlend = apvts.getRawParameterValue (ParamID::doublerBlend);
     for (int pc = 0; pc < 12; ++pc)
         pNotes[pc] = apvts.getRawParameterValue (ParamID::note (pc));
     chain.setTelemetryQueue (&telemetry);
@@ -30,15 +34,15 @@ void LyraTuneProcessor::prepareToPlay (double sr, int)
 {
     // Allocate for the lowest range so switching Range never allocates on the audio thread.
     chain.prepare (sr, kRangeMinHz[0]);
-    setLatencySamples (lyra::TunerChain::latencyFor (sr, rangeMinHz (pRange->load())));
+    setLatencySamples (lyra::TunerChain::latencyFor (sr, rangeMinHz (pRange->load()), pHq->load() > 0.5f));
     preparedRate = sr;
 }
 
 void LyraTuneProcessor::timerCallback()
 {
-    // shortcut: latency is re-reported up to 100 ms after a Range change; DSP switches immediately.
+    // shortcut: latency is re-reported up to 100 ms after a Range/HQ change; DSP switches immediately.
     if (const double sr = preparedRate.load(); sr > 0)
-        if (const int lat = lyra::TunerChain::latencyFor (sr, rangeMinHz (pRange->load())); lat != getLatencySamples())
+        if (const int lat = lyra::TunerChain::latencyFor (sr, rangeMinHz (pRange->load()), pHq->load() > 0.5f); lat != getLatencySamples())
             setLatencySamples (lat);
 }
 
@@ -67,6 +71,10 @@ void LyraTuneProcessor::process (juce::AudioBuffer<float>& buffer, bool forceByp
     s.correction.stabilizerMs = stabilizerMs (pStabilizer->load());
     s.correction.sustain = pSustain->load() / 100.0;
     s.minFreq = rangeMinHz (pRange->load());
+    s.hq = pHq->load() > 0.5f;
+    s.doubler.enabled = pDoubler->load() > 0.5f;
+    s.doubler.width = pDblWidth->load() / 100.0f;
+    s.doubler.blend = pDblBlend->load() / 100.0f;
     s.bypass = forceBypass || pBypass->load() > 0.5f;
     chain.setSettings (s);
     chain.process (buffer.getArrayOfWritePointers(), numCh, buffer.getNumSamples());
@@ -81,10 +89,10 @@ lyra::PitchClassMask LyraTuneProcessor::currentMask() const noexcept
     return lyra::scaleMask (type, juce::jlimit (0, 11, int (pRoot->load())), custom);
 }
 
-double LyraTuneProcessor::latencyMsFor (int rangeIndex) const noexcept
+double LyraTuneProcessor::latencyMsFor (int rangeIndex, bool hq) const noexcept
 {
     const double sr = preparedRate.load() > 0 ? preparedRate.load() : 48000.0;
-    return 1000.0 * lyra::TunerChain::latencyFor (sr, rangeMinHz (float (rangeIndex))) / sr;
+    return 1000.0 * lyra::TunerChain::latencyFor (sr, rangeMinHz (float (rangeIndex)), hq) / sr;
 }
 
 void LyraTuneProcessor::resetAllParameters()

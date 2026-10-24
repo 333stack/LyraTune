@@ -16,6 +16,8 @@ LyraTune is a real-time pitch-correction plugin designed to deliver responsive v
 - **Aggressive tuning:** Supports correction speeds down to -3 ms for an especially immediate, hard-tuned sound — the Speed knob has a definitive 0 ms notch and visibly "overloads" past it.
 - **Note Stabilizer:** Short / Mid / Long confirmation so fast runs and grace notes stay natural — with zero added latency.
 - **Sustain:** Retune speed follows note age to tighten or loosen held notes.
+- **HQ mode:** Optional 2 ms detector lookahead for tighter tuning (latency rises by 2 ms and is reported to the host).
+- **Doubler:** Two subtly detuned, drifting voices with Width and Blend controls for an instant double-track.
 
 ### 🎵 Accurate Pitch Detection
 - **YIN-based pitch detection** for real-time vocal pitch tracking.

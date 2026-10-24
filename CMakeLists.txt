@@ -42,7 +42,8 @@ target_sources(LyraTune PRIVATE
     Source/DSP/Pitch/YinDetector.cpp
     Source/DSP/Pitch/PitchShifter.cpp
     Source/DSP/Pitch/CorrectionEngine.cpp
-    Source/DSP/TunerChain.cpp)
+    Source/DSP/TunerChain.cpp
+    Source/DSP/Doubler.cpp)
 
 target_compile_definitions(LyraTune PUBLIC
     JUCE_WEB_BROWSER=0
@@ -52,10 +53,3 @@ target_compile_definitions(LyraTune PUBLIC
 target_link_libraries(LyraTune
     PRIVATE LyraTuneAssets juce::juce_audio_processors
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
-
-# Dev tool: render the editor to PNG under Wine (not installed, not part of the plugin).
-add_executable(ui_snapshot Tools/ui_snapshot.cpp)
-target_include_directories(ui_snapshot PRIVATE $<TARGET_PROPERTY:LyraTune,INCLUDE_DIRECTORIES>)
-target_compile_definitions(ui_snapshot PRIVATE $<TARGET_PROPERTY:LyraTune,COMPILE_DEFINITIONS>)
-target_link_libraries(ui_snapshot PRIVATE LyraTune juce::juce_recommended_config_flags)
-set_target_properties(ui_snapshot PROPERTIES WIN32_EXECUTABLE FALSE)

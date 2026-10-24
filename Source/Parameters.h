@@ -13,6 +13,10 @@ inline constexpr auto referenceHz = "refHz";
 inline constexpr auto range = "range";
 inline constexpr auto stabilizer = "stabilizer";
 inline constexpr auto sustain = "sustain";
+inline constexpr auto hq = "hq";
+inline constexpr auto doubler = "doubler";
+inline constexpr auto doublerWidth = "dblWidth";
+inline constexpr auto doublerBlend = "dblBlend";
 inline juce::String note (int pitchClass) { return "note" + juce::String (pitchClass); } // note0 (C) .. note11 (B)
 }
 
@@ -68,6 +72,14 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout
         NormalisableRange<float> (-100.0f, 100.0f, 1.0f), 0.0f,
         AudioParameterFloatAttributes().withStringFromValueFunction (
             [] (float x, int) { return (x > 0.5f ? "+" : "") + String (roundToInt (x)); })));
+
+    // HQ changes latency (+2 ms lookahead): not automatable, same reasoning as Range.
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::hq, 4 }, "HQ Mode", false,
+        AudioParameterBoolAttributes().withAutomatable (false)));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::doubler, 4 }, "Doubler", false));
+    auto pct = AudioParameterFloatAttributes().withLabel ("%").withStringFromValueFunction ([] (float x, int) { return String (roundToInt (x)) + " %"; });
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::doublerWidth, 4 }, "Doubler Width", NormalisableRange<float> (0.0f, 100.0f, 1.0f), 70.0f, pct));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::doublerBlend, 4 }, "Doubler Blend", NormalisableRange<float> (0.0f, 100.0f, 1.0f), 50.0f, pct));
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::range, v }, "Range", kRangeNames, 0,
         AudioParameterChoiceAttributes().withAutomatable (false)));
