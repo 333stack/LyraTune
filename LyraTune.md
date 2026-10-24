@@ -57,7 +57,7 @@ Status levels: **Implemented** (code exists) · **Unit-tested** · **Measured** 
 | Feature | Status |
 |---|---|
 | Real-time pitch detection (YIN), voicing, confidence | Unit-tested, measured, host-tested |
-| Octave-error protection | Unit-tested, measured |
+| Octave/harmonic-error protection | Unit-tested, measured |
 | Key / scale: Chromatic, Major, Minor, Custom (per-note) | Unit-tested, host-tested |
 | Root note, reference pitch (420–460 Hz) | Unit-tested |
 | Speed (−3 … 400 ms) incl. aggressive negative range, 0 ms detent | Unit-tested, host-tested |
@@ -94,7 +94,7 @@ Insert Lyra Tune on a **dry, monophonic** vocal track (before reverb, delay or d
 ### Window layout
 
 **Header**
-- **Menu** (left): window size 75 / 100 / 125 / 150 %.
+- **Menu** (left): window size 75 / 100 / 125 / 150 %, HQ mode (+2 ms latency).
 - **Undo / Redo / Reset All**: edit history (≥ 20 steps); Reset All is undoable.
 - **A / B** with the chevron between them: switch between two complete settings snapshots; the
   chevron copies the current snapshot to the other one.
@@ -115,8 +115,8 @@ Insert Lyra Tune on a **dry, monophonic** vocal track (before reverb, delay or d
 - Clockwise = faster/harder. The arc fills as the setting becomes more aggressive.
 - `400 … 0 ms`: smoothing time constant. Slow settings keep vibrato and natural movement.
 - `0 ms`: instant correction.
-- `0 … −3 ms`: aggressive mode — instant, plus an overshoot on each note-to-note change: the output
-  lands up to 20 % of the interval past the new note (at −3 ms, max ±1 st) and settles over ~100 ms.
+- `0 … −3 ms`: aggressive mode — instant, and the note-change hysteresis shrinks to zero at −3 ms,
+  so notes snap the moment the voice crosses the midpoint.
 - A notch marks **0 ms**; drags snap to it within ±0.4 ms. Past it the knob "overloads": the
   negative zone runs red-hot and flickers, a glow pulses behind the dial, and a shockwave fires as
   you cross zero — stronger the deeper you go.
@@ -247,9 +247,11 @@ buffer size.
   measurably worse on glides — see §12.)
 - New estimate every **2 ms**.
 - Silence gate at −55 dBFS.
-- Octave protection: (1) prefer twice the period when the half-period dip is much shallower than the
-  full one; (2) a 30 ms continuity hold keeps the previous octave when the estimate jumps by an
-  octave but the old period is still valid. Holding the lower octave is safe for the shifter (a
+- Octave/harmonic protection: (1) prefer twice the period when the half-period dip is much shallower than the
+  full one; (2) a 30 ms continuity hold keeps the previous period when the estimate jumps to a
+  harmonic (period ÷ 2…6 or × 2/3) or subharmonic (× 2, × 3) but the old period is still valid. On
+  real vocals these jumps (12/19/24/28 semitones, 4–40 ms) were the bulk of detector errors; widening
+  the hold from octaves to harmonics cut A→B→A target flickers by 20–40 % (§12). Holding the lower octave is safe for the shifter (a
   whole multiple of the period still splices in phase).
 - Non-finite input (NaN/Inf) is replaced by silence before it reaches any filter state.
 
@@ -259,19 +261,42 @@ buffer size.
   twelve note parameters).
 - Nearest allowed note wins; exact ties go to the lower note.
 - Hysteresis: the target only changes once the pitch is 15 cents **past** the midpoint between two
-  notes. If the current target is removed from the scale it is
+  notes (shrinks to 0 in aggressive Speed). If the current target is removed from the scale it is
   abandoned immediately. Empty mask → no correction.
 
 ### 6.3 Correction — `CorrectionEngine`
-- Requested correction = `(target − input) · Amount`, in semitones.
-- The **correction offset** (not the output pitch) is smoothed with a one-pole filter,
-  `α = 1 − exp(−1 / (T · fs))`, `T = Speed`. Smoothing the offset lets fast natural movement such as
-  vibrato pass through at slow speeds.
-- Speed ≤ 0 never reaches the exponential: 0 → instant; −3…0 → instant plus overshoot
-  `o = clamp(0.2·|Speed|/3 · ΔNote · Amount, ±1 st)` on a confirmed note change (not after silence),
-  decaying with a 100 ms time constant. β, limit and release are untuned guesses.
+- Requested correction = `(target − pitch) · Amount`, in semitones.
+- **Prediction.** An estimate describes audio ~1–2 ms older than the audio the shifter is playing
+  (window centre minus shifter delay). Every sample uses the pitch extrapolated along the detector's
+  own slope: `p(t) = m + v · (lead + time since estimate)`, `v = Δm / hop`,
+  `lead = (window + 1/f)/2 + 0.1 ms − shifter delay`. No added latency. The slope is capped at
+  100 st/s and the predicted offset at ±20 c, so one bad estimate cannot predict a wrong note; jumps
+  > 0.75 st and onsets reset it. This removes the lag error HQ mode used to fix by buffering, and the
+  2 ms correction staircase. (Smoothing the detected pitch was tried and measured worse: real voice
+  movement exceeds the detector noise.)
+- **Smoothing.** The **correction offset** (not the output pitch) is smoothed by two cascaded
+  one-poles (critically damped), each `τ = Speed / 2.146`, so the step response reaches 63.2 % at
+  `t = Speed` like a one-pole, but starts with zero slope and never overshoots: retunes glide in an
+  S-curve. Speed ≤ 0 never reaches the exponential: 0 → instant; −3…0 → instant plus reduced hysteresis.
+- **Vibrato analyser.** A zigzag detector confirms a pitch peak/trough once the pitch turns back by
+  8 c. The last three extrema count as vibrato when both half-cycles last 35–170 ms (≈ 3–14 Hz) and
+  both swings are 16–200 c and within 1.5× of each other — a glide or note change never qualifies.
+  Depth `A = min(swing)/2`, centre `= (e0 + 2·e1 + e2)/4`. Ignored when the pitch leaves
+  `centre ± (1.5·A + 10 c)`. Used for:
+  - **Hysteresis** `h = min(15 c + A/2, 45 c)`: wide vibrato around a note sung sharp or flat no
+    longer flips the target every cycle.
+  - **Vibrato kept at Speed > 0**: the pitch to correct is `centre + F·(p − centre)`,
+    `F = exp(−Speed / 12 ms)`. The vibrato's centre is tuned with Speed; its shape passes untouched.
+    Synthetic ±40 c / 5.5 Hz vibrato 30 c sharp, kept in phase: 20 ms 32 % → 86 %, 40 ms 66 % → 99 %
+    (before: slow Speed kept vibrato only by lagging behind it, which reshaped it); centre error 0 c.
+- **Onsets.** The first note of a phrase that starts steady (smoothed slope < 6 st/s) is tuned with
+  `min(Speed, 8 ms)` for its first 40 ms, instead of gliding in from its untuned start; a note that
+  starts with a scoop keeps Speed, so the scoop stays natural. Steady onset 30 c sharp, error after
+  30 ms: 1.8–21 c → 0.2–0.3 c across Speed 10–80 ms.
 - Unvoiced or low-confidence (< 0.70) frames release the correction to zero with
   `max(Speed, 20 ms)`.
+- shortcut: the vibrato keep constant (12 ms), turn threshold (8 c), 45 c cap and onset values are
+  first estimates from three vocals and synthetic tests; tune them by ear.
 
 **Note Stabilizer** (causal, zero added latency). When the selected note differs from the confirmed
 target it becomes a *candidate*. While unconfirmed, the correction releases toward zero, so the
@@ -283,7 +308,7 @@ available at every Range setting.
 
 **Sustain** tracks the age of the confirmed note and scales Speed's time constant:
 `T_eff = T · 2^(−3 · sustain · min(1, age / 0.5 s))` with sustain in −1…1. At +100 a note held for
-0.5 s retunes 8× faster; at −100, 8× slower. Parameter changes act through the one-pole smoother, so
+0.5 s retunes 8× faster; at −100, 8× slower. Parameter changes act through the smoother, so
 they never click.
 
 ### 6.4 Pitch shifting — `PitchShifter`
@@ -406,7 +431,7 @@ A native Linux VST3 is a different binary and will not load in a Windows DAW run
 
 ## 12. Testing and measurements
 
-### Automated tests (`scripts/test.sh`) — 35 tests, all passing; ASan/UBSan clean
+### Automated tests (`scripts/test.sh`) — 41 tests, all passing; ASan/UBSan clean
 - Frequency ↔ MIDI conversion, reference pitch, cents error.
 - Scale masks, transposition, nearest allowed note, ties, hysteresis, mask changes, empty mask.
 - YIN on sines 80–880 Hz at 44.1 / 48 / 88.2 / 96 / 192 kHz: max error < 3 cents, > 99 % voiced.
@@ -426,6 +451,26 @@ A native Linux VST3 is a different binary and will not load in a Windows DAW run
 - End to end: a tone 35 cents sharp is corrected to within 0.04 cents.
 - Full chain: zero heap allocations while switching bypass/Range/Speed; no clicks (max sample step
   equals the input's own).
+
+### 0.5.0 tuning algorithm (three vocal stems, 48 kHz, `Tools/render_tuner` → `Tools/analyze_vocal`)
+Material: FL Studio demo stems (likely already produced): a 15 s dry vocal (D minor, Range High) and
+two 3-minute leads (E major and C# major, Range Low). Output is re-analysed with the same detector,
+so ~1 c of the numbers is measurement floor. "Centre" = mean of 100 ms single-note windows.
+
+| Speed 0 (HQ off) | 90th-pct error to nearest note: 0.4.1 → 0.5.0 | Note-centre p90 |
+|---|---|---|
+| Dry 15 s | 8.5 → 6.0 c | 1.0 c |
+| Lead E major | 13.6 → 11.9 c | 1.4 c |
+| Lead C# major | 20.0 → 16.9 c | 3.6 c |
+
+0.5.0 without HQ beats 0.4.1 with HQ on all three (HQ: 9.0 / 12.5 / 18.3 c). A→B→A target
+flickers (< 60 ms) on the two leads: 341 → 212 and 224 → 178 per minute (harmonic hold); the rest
+are fast runs crossing scale gaps, which the Note Stabilizer is for. At Speed 20/60 the note-centre
+error moves by ±1–2 c (mostly up): part is vibrato now kept on purpose (100 ms windows do not
+average a 5 Hz cycle out), part is the S-curve landing slightly later. Judge these settings by ear.
+CPU: unchanged (full chain, Low range: 13.68 s → 13.79 s for 211 s of stereo audio).
+HQ on top of 0.5.0 (Speed 0, p90): 6.0 → 6.1 / 11.9 → 11.6 / 16.9 → 15.5 c — a small remaining gain for
++2 ms; most of what HQ bought is now done by prediction.
 
 ### Real vocal (3-minute untuned lead vocal, 48 kHz)
 Measured with `Tools/analyze_vocal` on the plugin's own output (Range High, C major):
@@ -530,9 +575,21 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 
 ## 16. Changelog
 
+### 0.5.0 — 2026-10-24
+New tuning algorithm (no added latency, no new parameters; projects will sound different):
+- Pitch prediction: corrections follow the voice without the detector's 1–2 ms lag. Speed 0 is
+  tighter than 0.4's HQ mode without HQ's extra latency.
+- Harmonic hold: detector jumps to the 2nd–6th harmonic no longer flip the target note.
+- Speed glides in an S-curve (critically damped) instead of a one-pole.
+- Vibrato: hysteresis widens with vibrato depth; slow Speeds tune the vibrato's centre and keep its shape.
+- Steady phrase onsets are tuned within ~8 ms at any Speed; scoops stay natural.
+- Reverted the 0.4.0 negative-Speed overshoot: it kicked up to a full semitone past each new note,
+  which was heard as wrong notes. Negative Speed is back to the 0.3.1 behaviour (hysteresis shrinks to 0).
+- HQ mode moved from the Latency panel into the main menu (☰).
+- 41 automated tests.
+
 ### 0.4.0 — 2026-10-24
-- Negative Speed (−3…0 ms) now overshoots past each new note and settles over ~100 ms, instead of
-  shrinking the note-change hysteresis. Projects saved with negative Speed will sound different.
+- Negative Speed (−3…0 ms) overshot past each new note and settled over ~100 ms. Reverted in 0.5.0.
 
 ### 0.3.1 — 2026-10-24
 - Fix: the root-note and main menus closed immediately in some hosts running under Wine. Menus now

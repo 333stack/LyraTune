@@ -23,7 +23,7 @@ if(LYRA_SANITIZE)
     target_link_options(dsp_tests PRIVATE -fsanitize=address,undefined)
 endif()
 
-add_executable(analyze_vocal ${CMAKE_CURRENT_SOURCE_DIR}/../Tools/analyze_vocal.cpp ${DSP}/Pitch/YinDetector.cpp)
+add_executable(analyze_vocal ${CMAKE_CURRENT_SOURCE_DIR}/../Tools/analyze_vocal.cpp ${DSP}/Pitch/YinDetector.cpp ${DSP}/Pitch/TargetSelector.cpp)
 target_include_directories(analyze_vocal PRIVATE ${DSP})
 
 add_executable(render_tuner ${CMAKE_CURRENT_SOURCE_DIR}/../Tools/render_tuner.cpp

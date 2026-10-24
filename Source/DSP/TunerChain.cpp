@@ -20,6 +20,7 @@ void TunerChain::prepare (double sampleRate, double lowestMinFreq)
     aheadDelay.setDelay (0);
     hq = false;
     dryDelay.setDelay (latencySamples());
+    engine.setTiming (yin.windowSeconds(), latencySamples() / sr);
     doubler.prepare (sr);
     wetStep = float (1.0 / (0.010 * sr));
     reset();
@@ -50,6 +51,7 @@ void TunerChain::setSettings (const Settings& s) noexcept
         hq = s.hq;
         aheadDelay.setDelay (hq ? lookahead : 0); // crossfaded inside FixedDelay: no click
         dryDelay.setDelay (latencySamples());
+        engine.setTiming (yin.windowSeconds(), latencySamples() / sr);
     }
     doubler.setParams (s.doubler);
     wetTarget = s.bypass ? 0.0f : 1.0f;
@@ -80,8 +82,8 @@ void TunerChain::process (float* const* ch, int numCh, int total) noexcept
             for (int c = 0; c < numCh; ++c) s += io[c][i];
             mono[i] = s * invCh;
         }
-        yin.process (mono, n, [this] (int, const PitchEstimate& e) {
-            engine.onEstimate (e);
+        yin.process (mono, n, [this] (int i, const PitchEstimate& e) {
+            engine.onEstimate (e, i);
             shifter.setPeriod (e.voiced ? sr / e.frequency : 0.0);
             doubler.setPeriod (e.voiced ? sr / e.frequency : 0.0);
             if (telemetry != nullptr)

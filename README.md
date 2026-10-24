@@ -10,24 +10,11 @@ LyraTune is a free real-time pitch-correction plugin (VST3, Windows x64, also ru
 
 Most pitch correctors stop at 0 ms: the note jumps straight to the target. LyraTune's **Speed** knob keeps going to **−3 ms**.
 
-**What it does:** when you sing from one note to the next, the output **overshoots past the new note and then settles onto it**. That small kick on every note change gives a harder, more aggressive hard-tune effect than 0 ms can.
-
-**How it works:**
-- On each confirmed note-to-note change, the pitch is pushed past the new note by up to **20 % of the interval** (at −3 ms; it scales linearly with how far below 0 you go, and with **Amount**).
-- The kick is capped at **±1 semitone**, so octave leaps stay musical.
-- It then settles onto the note with a **~100 ms** release.
-- Notes that start after silence do not overshoot — only transitions do.
-
-| Speed | Overshoot on a 2-semitone step |
-|---|---|
-| 0 ms | none (instant) |
-| −1 ms | 13 cents |
-| −2 ms | 27 cents |
-| −3 ms | 40 cents |
+**What it does:** below 0 ms the note-change hysteresis shrinks, reaching zero at −3 ms. The output snaps to the next note the moment your voice crosses the midpoint between two notes, for the hardest, most robotic hard-tune sound.
 
 **No lookahead, no extra latency.** The effect is computed causally from the detected pitch, so negative Speed adds 0 ms to the plugin's latency.
 
-**Tip:** pair it with the **Note Stabilizer**. The Stabilizer confirms a note before the kick fires, so vibrato and pitch wobble that brush a note boundary don't trigger overshoots — only real note changes do.
+**Tip:** pair it with the **Note Stabilizer** if fast runs flip between notes too eagerly.
 
 The Speed knob has a definitive 0 ms notch and visibly "overloads" past it: the negative zone runs red-hot and the orb shifts toward pink.
 
@@ -36,16 +23,16 @@ The Speed knob has a definitive 0 ms notch and visibly "overloads" past it: the 
 ### 🎯 Low-Latency Pitch Correction
 - **Honest latency reporting:** 3.6 / 5.3 / 7.4 ms of added latency at 48 kHz for the High / Mid / Low pitch ranges.
 - **Host delay compensation (PDC):** latency is reported to the host.
-- **Retune Speed −3 … 400 ms:** from natural, vibrato-preserving correction to instant hard tuning and the negative overshoot range.
+- **Retune Speed −3 … 400 ms:** from natural, vibrato-preserving correction to instant hard tuning and the negative zero-hysteresis range.
 - **Amount:** blend between the natural and fully corrected pitch.
 - **Note Stabilizer:** Short / Mid / Long confirmation so fast runs and grace notes stay natural — zero added latency.
 - **Sustain:** retune speed follows note age to tighten or loosen held notes.
-- **HQ mode:** optional 2 ms detector lookahead for tighter tuning (+2 ms, reported to the host).
+- **HQ mode** (main menu): optional 2 ms detector lookahead for tighter tuning (+2 ms, reported to the host).
 - **Doubler:** two subtly detuned, drifting voices with Width and Blend for an instant double-track.
 
 ### 🎵 Accurate Pitch Detection
 - **YIN-based pitch detection** for real-time vocal pitch tracking.
-- **Octave-error protection.**
+- **Octave- and harmonic-error protection.**
 - Built for live vocal monitoring and tracking.
 
 ### 🎹 Key and Scale Control
@@ -79,7 +66,7 @@ Format: VST3, Windows x64. Verify downloads with `SHA256SUMS.txt`.
 
 **Is LyraTune free?** Yes. It is free and open source under the AGPL-3.0 license.
 
-**What is negative retune speed?** A Speed setting below 0 ms. Instead of jumping exactly to each new note, the voice briefly overshoots past it and settles, for a harder hard-tune effect. See [above](#-negative-retune-speed--harder-than-instant).
+**What is negative retune speed?** A Speed setting below 0 ms. Correction stays instant and the note-change hysteresis shrinks to zero at −3 ms, so notes snap exactly at the midpoint between them. See [above](#-negative-retune-speed--harder-than-instant).
 
 **Does negative Speed add latency?** No. It uses no lookahead; latency stays the same as at 0 ms.
 
@@ -95,8 +82,8 @@ Format: VST3, Windows x64. Verify downloads with `SHA256SUMS.txt`.
 
 | Component | Implementation |
 |---|---|
-| Pitch detection | YIN-based, with octave-error protection |
-| Correction | One-pole retune smoothing; negative Speed adds a decaying overshoot |
+| Pitch detection | YIN-based, with octave- and harmonic-error protection |
+| Correction | Lag-compensating pitch prediction, critically damped retune, vibrato-aware hysteresis and vibrato keep; negative Speed removes note-change hysteresis |
 | Latency at 48 kHz | 3.6 / 5.3 / 7.4 ms (+2 ms in HQ) |
 | Latency compensation | Host-reported plugin latency |
 | Scale modes | Chromatic, major, minor, custom |

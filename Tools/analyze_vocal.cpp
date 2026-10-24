@@ -1,14 +1,17 @@
 // Offline vocal analysis with the plugin's own YinDetector.
-// Optional 3rd arg: CSV path for the per-hop track.
+// Optional 3rd arg: CSV path for the per-hop track ("-" = none); 4th/5th: root (0=C) and scale
+// (0 chromatic, 1 major, 2 minor) for the error report against allowed notes (default chromatic).
 // Input: raw float32 mono at the given rate on stdin, e.g.
 //   ffmpeg -v error -i vocal.wav -ac 1 -f f32le - | build/tests/analyze_vocal 48000 [minHz]
 // Reports pitch range, tuning offset vs A440, a Krumhansl-Schmuckler key estimate, and octave-jump counts.
 #include "Pitch/PitchMath.h"
 #include "Pitch/YinDetector.h"
+#include "Pitch/TargetSelector.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 using namespace lyra;
@@ -50,7 +53,7 @@ int main (int argc, char** argv)
         prev = m;
     }
     if (midi.empty()) { std::puts ("no voiced frames"); return 1; }
-    if (argc > 3) // optional per-hop CSV: time, freq, confidence, voiced
+    if (argc > 3 && std::string (argv[3]) != "-") // optional per-hop CSV: time, freq, confidence, voiced
         if (FILE* f = std::fopen (argv[3], "w"))
         {
             const double hopSec = det.hopSamples() / sr;
@@ -67,6 +70,30 @@ int main (int argc, char** argv)
     for (double p : { 0.01, 0.05, 0.5, 0.95, 0.99 })
         std::printf ("  p%02.0f: %6.1f Hz  %s\n", p * 100, midiToFreq (pct (midi, p)), noteName (pct (midi, p)));
     std::printf ("tuning: median offset from nearest semitone %.1f c (A440 grid)\n", pct (cents, 0.5));
+    // Error to the nearest allowed note, and hop-to-hop jitter (|delta| < 50 c: within a note).
+    const auto mask = argc > 5 ? scaleMask (ScaleType (std::atoi (argv[5]) % 3), std::atoi (argv[4])) : kAllNotes;
+    std::vector<double> err, jit;
+    for (size_t i = 0; i < midi.size(); ++i)
+    {
+        err.push_back (100.0 * std::abs (midi[i] - TargetSelector::nearestAllowed (midi[i], mask)));
+        if (i > 0 && std::abs (midi[i] - midi[i - 1]) < 0.5) jit.push_back (100.0 * std::abs (midi[i] - midi[i - 1]));
+    }
+    // Note-centre error: mean pitch of 100 ms voiced windows spanning < 1 st (one note, vibrato
+    // averaged out) vs the nearest allowed note. The right yardstick at slow Speeds, which keep vibrato.
+    std::vector<double> centreErr;
+    for (size_t i = 0; i + 50 <= midi.size(); i += 25)
+    {
+        const auto [lo, hi] = std::minmax_element (midi.begin() + long (i), midi.begin() + long (i + 50));
+        if (*hi - *lo >= 1.0) continue;
+        double mean = 0;
+        for (size_t k = i; k < i + 50; ++k) mean += midi[k] / 50.0;
+        centreErr.push_back (100.0 * std::abs (mean - TargetSelector::nearestAllowed (mean, mask)));
+    }
+    if (! centreErr.empty())
+        std::printf ("note-centre error (100 ms): median %.1f c, p90 %.1f c\n", pct (centreErr, 0.5), pct (centreErr, 0.9));
+    const double within10 = double (std::count_if (err.begin(), err.end(), [] (double c) { return c <= 10.0; })) / double (err.size());
+    std::printf ("error to allowed notes: median %.1f c, p90 %.1f c, within 10 c %.1f%%; hop jitter median %.2f c, p90 %.2f c\n",
+                 pct (err, 0.5), pct (err, 0.9), 100.0 * within10, pct (jit, 0.5), pct (jit, 0.9));
     std::printf ("adjacent-hop jumps: ~octave %d, >4 st %d (of %zu voiced)\n", octaveJumps, semitoneJumpsLarge, midi.size());
 
     // Krumhansl-Kessler key profiles.

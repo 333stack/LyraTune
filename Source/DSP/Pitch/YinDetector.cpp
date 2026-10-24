@@ -126,12 +126,17 @@ void YinDetector::analyse() noexcept
             best = m;
     }
 
-    // Continuity hold: an abrupt ~octave jump right after voiced frames is treated as suspect.
+    // Continuity hold: an abrupt jump to a harmonic (period / 2..6, 2/3) or subharmonic (x2, x3) right
+    // after voiced frames is treated as suspect. On real vocals these are the bulk of detector errors
+    // (measured: 12/19/24/28-semitone excursions of 4-40 ms); each one used to flip the target note.
     bool held = false;
     if (prevTau > 0 && hopsSinceVoiced <= maxGapHops)
     {
         const double rel = best / prevTau;
-        if (std::abs (rel - 0.5) < 0.04 || std::abs (rel - 2.0) < 0.12)
+        bool harmonic = std::abs (rel * 1.5 - 1.0) < 0.04 || std::abs (rel / 2.0 - 1.0) < 0.06 || std::abs (rel / 3.0 - 1.0) < 0.06;
+        for (int k = 2; k <= 6; ++k)
+            harmonic = harmonic || std::abs (rel * k - 1.0) < 0.04;
+        if (harmonic)
         {
             if (++octaveRun < octaveHoldHops)
             {

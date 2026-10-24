@@ -11,7 +11,7 @@ const juce::Rectangle<float> scaleWell { 6.0f, rowY + 4.0f, 322.0f, rowH - 8.0f 
 const juce::Rectangle<float> stabilizerWell { 334.0f, rowY + 4.0f, 290.0f, rowH - 8.0f };
 const juce::Rectangle<float> rangeWell { 630.0f, rowY + 4.0f, 264.0f, rowH - 8.0f };
 const juce::Rectangle<float> doublerFrame { 8.0f, 52.0f, 114.0f, 140.0f };
-const juce::Rectangle<float> latencyFrame { 8.0f, rowY - 42.0f, 224.0f, 38.0f };
+const juce::Rectangle<float> latencyFrame { 8.0f, rowY - 42.0f, 164.0f, 38.0f };
 constexpr int keysX = 160, keysW = 600, keysY = 420, keysBottom = 592;
 constexpr int rightX = 772;
 } // namespace layout
@@ -34,7 +34,7 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     for (auto* c : std::initializer_list<juce::Component*> { &orb, &speedKnob, &amountKnob, &sustainKnob, &scaleSeg, &stabilizerSeg, &rangeSeg, &keyboard, &refStrip,
                                                             &menuButton, &undoButton, &redoButton, &resetButton, &aButton, &copyButton, &bButton,
                                                             &helpButton, &heatButton, &detectedButton, &bypassButton, &credit,
-                                                            &doublerButton, &widthStrip, &blendStrip, &hqButton })
+                                                            &doublerButton, &widthStrip, &blendStrip })
         canvas.addAndMakeVisible (c);
 
     using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -50,9 +50,7 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     widthStrip.setDoubleClickReturnValue (true, 70.0);
     blendStrip.setDoubleClickReturnValue (true, 50.0);
     doublerButton.setClickingTogglesState (true);
-    hqButton.setClickingTogglesState (true);
     doublerAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (state, ParamID::doubler, doublerButton);
-    hqAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (state, ParamID::hq, hqButton);
     bypassButton.setClickingTogglesState (true);
     bypassButton.onColour = theme::pink;
     bypassAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (state, ParamID::bypass, bypassButton);
@@ -110,8 +108,7 @@ LyraTuneEditor::LyraTuneEditor (LyraTuneProcessor& p)
     doublerButton.setTooltip ("Two extra voices for a wider, thicker vocal.");
     widthStrip.setTooltip ("Doubler stereo spread.");
     blendStrip.setTooltip ("Doubler level.");
-    hqButton.setTooltip ("Tighter tracking. +2 ms latency.");
-    menuButton.setTooltip ("Settings");
+    menuButton.setTooltip ("Settings, window size, HQ mode");
 
     updateTooltips();
     // Capture the saved scale first: setResizeLimits() clamps the still-0x0 editor to the minimum size,
@@ -172,7 +169,6 @@ void LyraTuneEditor::layout()
     doublerButton.setBounds (14, 56, 102, 28);
     widthStrip.setBounds (18, 112, 96, 26);
     blendStrip.setBounds (18, 158, 96, 26);
-    hqButton.setBounds (176, rowY - 38, 44, 30);
 
     scaleSeg.setBounds (58, rowY + 5, 266, rowH - 10);
     stabilizerSeg.setBounds (408, rowY + 5, 212, rowH - 10);
@@ -258,9 +254,8 @@ void LyraTuneEditor::Canvas::paint (juce::Graphics& g)
     g.drawText ("Width", 18, 96, 96, 14, juce::Justification::centredLeft);
     g.drawText ("Blend", 18, 142, 96, 14, juce::Justification::centredLeft);
 
-    // Latency section: readout | hairline | HQ toggle (latency-sensitive settings stay visible together).
+    // Latency section (HQ mode, which adds 2 ms, is toggled in the main menu; the readout includes it).
     drawSectionPanel (g, latencyFrame, 10.0f);
-    drawHairline (g, { 168.0f, latencyFrame.getY() + 8.0f }, { 168.0f, latencyFrame.getBottom() - 8.0f }, 0.16f);
     g.setFont (font (12.0f, true));
     g.setColour (textDim);
     g.drawText ("LATENCY", 18, int (latencyFrame.getY()), 60, int (latencyFrame.getHeight()), juce::Justification::centredLeft);
@@ -424,10 +419,16 @@ void LyraTuneEditor::showMainMenu()
     for (int pct : { 75, 100, 125, 150 })
         sizes.addItem (pct, juce::String (pct) + " %", true, std::abs (proc.ui.scale * 100.0f - float (pct)) < 1.0f);
     m.addSubMenu ("Window size", sizes);
+    const bool hq = state.getRawParameterValue (ParamID::hq)->load() > 0.5f;
+    m.addItem (2000, "HQ mode (+2 ms latency)", true, hq);
     m.addSeparator();
     m.addItem (1000, juce::String (JucePlugin_Name) + " " + JucePlugin_VersionString, false);
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (menuButton).withParentComponent (this),
-                     [sp = juce::Component::SafePointer<LyraTuneEditor> (this)] (int r) { if (sp && r >= 75 && r <= 150) sp->setScale (float (r) / 100.0f); });
+                     [sp = juce::Component::SafePointer<LyraTuneEditor> (this), hq] (int r) {
+                         if (! sp) return;
+                         if (r >= 75 && r <= 150) sp->setScale (float (r) / 100.0f);
+                         if (r == 2000) sp->setParam (ParamID::hq, hq ? 0.0f : 1.0f);
+                     });
 }
 
 void LyraTuneEditor::setScale (float s)

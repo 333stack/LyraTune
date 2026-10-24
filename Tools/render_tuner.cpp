@@ -8,6 +8,7 @@
 // Output is shifted earlier by the reported latency so it lines up with the input file.
 #include "TunerChain.h"
 #include "Pitch/Scale.h"
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -32,12 +33,27 @@ int main (int argc, char** argv)
     static lyra::TelemetryQueue telemetry; // static: large, keep off the stack
     chain.setTelemetryQueue (&telemetry);
     long switches = 0, holds = 0, voicedHops = 0;
-    int lastTarget = -1, lastPending = -1;
+    int lastTarget = -1, lastPending = -1, prevTarget = -1;
+    long bounces = 0, hopsSinceSwitch = 0, flickerBySize[13] {};
     auto drain = [&] {
         lyra::Telemetry t;
         while (telemetry.pop (t))
         {
-            if (t.target >= 0) { ++voicedHops; if (lastTarget >= 0 && t.target != lastTarget) ++switches; lastTarget = t.target; }
+            if (t.target >= 0)
+            {
+                ++voicedHops; ++hopsSinceSwitch;
+                if (lastTarget >= 0 && t.target != lastTarget)
+                {
+                    ++switches;
+                    if (t.target == prevTarget && hopsSinceSwitch <= 30) // A -> B -> A within 60 ms: a flicker
+                    {
+                        ++bounces;
+                        ++flickerBySize[std::min (std::abs (t.target - lastTarget), 12)];
+                    }
+                    prevTarget = lastTarget; hopsSinceSwitch = 0;
+                }
+                lastTarget = t.target;
+            }
             if (t.pending >= 0 && t.pending != lastPending) ++holds;
             lastPending = t.pending;
         } };
@@ -64,8 +80,11 @@ int main (int argc, char** argv)
         drain();
         emit (n);
     }
-    std::fprintf (stderr, "target changes %.1f/min of corrected audio, stabilizer holds %ld\n",
-                  voicedHops ? switches * 60.0 / (voicedHops * 0.002) : 0.0, holds);
+    std::fprintf (stderr, "target changes %.1f/min of corrected audio (flickers A-B-A < 60 ms %.1f/min), stabilizer holds %ld\n",
+                  voicedHops ? switches * 60.0 / (voicedHops * 0.002) : 0.0, voicedHops ? bounces * 60.0 / (voicedHops * 0.002) : 0.0, holds);
+    std::fprintf (stderr, "flickers by interval (st 1..12+):");
+    for (int k = 1; k <= 12; ++k) std::fprintf (stderr, " %ld", flickerBySize[k]);
+    std::fprintf (stderr, "\n");
     // Flush the tail so output length matches input.
     std::fill (l.begin(), l.end(), 0.0f); std::fill (r.begin(), r.end(), 0.0f);
     for (int left = latency; left > 0; left -= B)

@@ -457,13 +457,19 @@ TEST (correction_speed_time_constant)
     const double sr = 48000;
     for (double ms : { 5.0, 50.0, 200.0 })
     {
-        CorrectionEngine e; e.prepare (sr);
+        // A 1 s estimate interval puts the single estimate's note past the onset window (no 8 ms shortcut).
+        CorrectionEngine e; e.prepare (sr, 1.0);
         CorrectionEngine::Params p; p.speedMs = ms; e.setParams (p);
-        e.onEstimate (est (midiToFreq (69.40)));
-        float r = 1;
-        for (int i = 0; i < int (ms / 1000 * sr); ++i) r = e.nextRatio();
-        // After one time constant a one-pole reaches 1 - 1/e = 63.2% of the step.
+        e.onEstimate (est (midiToFreq (69.40))); // 40 c sharp
+        float r = 1, prev = 1;
+        bool monotonic = true;
+        for (int i = 0; i < int (ms / 1000 * sr); ++i) { r = e.nextRatio(); monotonic = monotonic && r <= prev; prev = r; }
+        // Critically damped pair: 63.2 % of the step after one Speed time constant, like a one-pole.
         CHECK_NEAR (1200.0 * std::log2 (double (r)) / -40.0, 1.0 - std::exp (-1.0), 0.005);
+        // ... approached monotonically, and never past the target.
+        for (int i = 0; i < int (10 * ms / 1000 * sr); ++i) { r = e.nextRatio(); monotonic = monotonic && r <= prev; prev = r; }
+        CHECK (monotonic);
+        CHECK (1200.0 * std::log2 (double (r)) >= -40.0 - 0.01); // float ratio resolution
     }
 }
 
@@ -479,10 +485,10 @@ TEST (correction_negative_speed_and_edges)
         CHECK (std::isfinite (r));
         if (s >= -3.0 && s < 0) CHECK_NEAR (1200.0 * std::log2 (double (r)), -20.0, 1e-3); // instant
     }
-    // Negative Speed keeps the normal hysteresis.
+    // -3 ms: zero hysteresis -> switches as soon as the midpoint is crossed.
     p.speedMs = -3; e.setParams (p); e.reset();
     e.onEstimate (est (midiToFreq (60.45))); CHECK (e.targetNote() == 60);
-    e.onEstimate (est (midiToFreq (60.52))); CHECK (e.targetNote() == 60);
+    e.onEstimate (est (midiToFreq (60.52))); CHECK (e.targetNote() == 61);
     // Empty mask and unvoiced input release to ratio 1.
     p.speedMs = 0; p.mask = 0; e.setParams (p); e.reset();
     e.onEstimate (est (midiToFreq (60.3)));
@@ -494,36 +500,6 @@ TEST (correction_negative_speed_and_edges)
     CHECK_NEAR (r, 1.0, 1e-4);
 }
 
-TEST (correction_negative_speed_overshoot)
-{
-    const double sr = 48000;
-    // Returns the output pitch offset (semitones) on the first sample after jumping 60 -> `to`.
-    auto jump = [sr] (double speed, double to, double amount, bool fromSilence, double* settled = nullptr)
-    {
-        CorrectionEngine e; e.prepare (sr);
-        CorrectionEngine::Params p; p.speedMs = speed; p.amount = amount; e.setParams (p);
-        e.onEstimate (est (midiToFreq (60.0))); e.nextRatio();
-        if (fromSilence)
-            for (int i = 0; i < 40; ++i) e.onEstimate ({ 0, 0, false }); // 80 ms gap: next note is an onset
-        e.onEstimate (est (midiToFreq (to)));
-        const double first = 12.0 * std::log2 (double (e.nextRatio()));
-        if (settled)
-        {
-            float r = 1; for (int i = 0; i < int (0.5 * sr); ++i) r = e.nextRatio();
-            *settled = 12.0 * std::log2 (double (r));
-        }
-        return first;
-    };
-    double settled = 1;
-    CHECK_NEAR (jump (-3.0, 62.0, 1.0, false, &settled), 0.4, 1e-4);  // 0.2 * 2 st past D
-    CHECK_NEAR (settled, 0.4 * std::exp (-5.0), 1e-3);               // 5 release time constants later
-    CHECK_NEAR (jump (-1.5, 62.0, 1.0, false), 0.2, 1e-4);            // scales with |speed|
-    CHECK_NEAR (jump (-3.0, 58.0, 1.0, false), -0.4, 1e-4);           // downward jump overshoots down
-    CHECK_NEAR (jump (-3.0, 62.0, 0.5, false), 0.2, 1e-4);            // scaled by Amount
-    CHECK_NEAR (jump (-3.0, 72.0, 1.0, false), 1.0, 1e-4);            // octave leap clamped to 1 st
-    CHECK_NEAR (jump (0.0, 62.0, 1.0, false), 0.0, 1e-4);             // 0 ms: no overshoot
-    CHECK_NEAR (jump (-3.0, 62.0, 1.0, true), 0.0, 1e-4);             // onset after silence: none
-}
 
 // ---------- note stabilizer ----------
 // Feeds `seconds` of a constant pitch as 2 ms estimates; returns the last target.
@@ -617,7 +593,7 @@ TEST (sustain_scales_speed_with_note_age)
     CHECK_NEAR (fast, 10.0, 2.5);   // 80 / 8
     CHECK_NEAR (slow, 640.0, 25.0); // 80 * 8
     // Young note (just started): sustain has barely any effect yet.
-    CHECK_NEAR (timeConstantAfterHold (80, 1.0, 0.0), 80.0, 25.0);
+    CHECK (timeConstantAfterHold (80, 1.0, 0.045) > 50.0); // just past the onset window: at most ~1.6x faster
     // Speed 0 stays instant whatever the sustain.
     CorrectionEngine e; e.prepare (48000, 0.002);
     CorrectionEngine::Params p; p.speedMs = 0; p.sustain = -1; e.setParams (p);
@@ -628,6 +604,141 @@ TEST (sustain_scales_speed_with_note_age)
     p.speedMs = 50; p.sustain = std::numeric_limits<double>::quiet_NaN(); p.stabilizerMs = -5; e.setParams (p);
     feed (e, 61.3, 0.1);
     CHECK (std::isfinite (e.nextRatio()));
+}
+
+// ---------- prediction, vibrato, onsets ----------
+// Feeds a pitch trajectory as estimates every 2 ms that are `staleMs` old (like the real detector);
+// returns the output pitch (input + correction) per sample from `from` seconds on.
+template <typename Pitch>
+static std::vector<double> runEngine (CorrectionEngine& e, Pitch&& pitch, double seconds, double from = 0, double staleMs = 1.8)
+{
+    const double sr = 48000;
+    std::vector<double> y;
+    for (int n = 0; n < int (seconds * sr); ++n)
+    {
+        const double t = n / sr;
+        if (n % 96 == 0) { const double m = pitch (t - staleMs / 1000); e.onEstimate ({ float (m > 0 ? midiToFreq (m) : 0), 0.95f, m > 0 }); }
+        const double c = 12.0 * std::log2 (double (e.nextRatio()));
+        if (t >= from) y.push_back (pitch (t) + c);
+    }
+    return y;
+}
+static CorrectionEngine makeEngine (double speedMs, bool timing = true)
+{
+    CorrectionEngine e; e.prepare (48000, 0.002);
+    CorrectionEngine::Params p; p.speedMs = speedMs; e.setParams (p);
+    if (timing) e.setTiming (0.0067, 0.5 * (0.0067 + 1.0 / midiToFreq (60)) + 1e-4 - 0.0018); // lead = 1.8 ms at C4, like runEngine's stale estimates
+    return e;
+}
+
+TEST (prediction_removes_detector_lag_and_is_bounded)
+{
+    // Slow swing (slope up to 2.8 st/s) with 1.8 ms stale estimates: a lag error of ~0.5 c without
+    // prediction; prediction must cancel it.
+    auto ramp = [] (double t) { return 60.0 + 0.15 * std::sin (2 * kPi * 3.0 * t); };
+    for (bool timing : { false, true })
+    {
+        auto e = makeEngine (0, timing);
+        auto y = runEngine (e, ramp, 1.0, 0.3);
+        double worst = 0;
+        for (double v : y) worst = std::max (worst, std::abs (100 * (v - 60.0)));
+        std::printf ("  slow swing, Speed 0, prediction %s: max error %.2f c\n", timing ? "on " : "off", worst);
+        CHECK (timing ? worst < 0.15 : worst > 0.4);
+    }
+    // A single bad estimate (+60 c for one hop) changes the predicted offset by at most kMaxPredict.
+    auto a = makeEngine (0, true), b = makeEngine (0, false);
+    double maxDiff = 0;
+    for (int hop = 0; hop < 100; ++hop)
+    {
+        const double m = hop == 50 ? 60.70 : 60.10;
+        a.onEstimate (est (midiToFreq (m))); b.onEstimate (est (midiToFreq (m)));
+        for (int k = 0; k < 96; ++k)
+            maxDiff = std::max (maxDiff, std::abs (12.0 * std::log2 (double (a.nextRatio()) / double (b.nextRatio()))));
+    }
+    CHECK (maxDiff <= CorrectionEngine::kMaxPredict + 1e-6);
+}
+
+TEST (vibrato_widens_hysteresis)
+{
+    // +-50 c, 5.5 Hz vibrato on a note sung 25 c sharp: peaks cross the C/C# midpoint by 25 c.
+    // Fixed 15 c hysteresis flips the target every cycle; the vibrato-aware one must not.
+    auto e = makeEngine (0);
+    auto vib = [] (double t, double centre) { return centre + 0.5 * std::sin (2 * kPi * 5.5 * t); };
+    int flips = 0, last = -1;
+    for (int hop = 0; hop < 1000; ++hop) // 2 s
+    {
+        e.onEstimate (est (midiToFreq (vib (hop * 0.002, 60.25))));
+        if (hop >= 150) { flips += last >= 0 && e.targetNote() != last; last = e.targetNote(); } // after ~1.5 cycles
+        for (int k = 0; k < 96; ++k) e.nextRatio();
+    }
+    std::printf ("  vibrato depth seen %.0f c, target flips %d\n", e.vibratoDepthCents(), flips);
+    CHECK (flips == 0);
+    CHECK_NEAR (e.vibratoDepthCents(), 50.0, 5.0);
+    // The singer really moves up a semitone (same vibrato): followed within 200 ms.
+    int hops = 0;
+    for (; hops < 500 && e.targetNote() != 61; ++hops)
+    {
+        e.onEstimate (est (midiToFreq (vib (2.0 + hops * 0.002, 61.25))));
+        for (int k = 0; k < 96; ++k) e.nextRatio();
+    }
+    CHECK (hops * 2 < 200);
+}
+
+TEST (slow_speed_keeps_vibrato_and_tunes_its_centre)
+{
+    // +-40 c, 5.5 Hz vibrato, centre 30 c sharp. Output: centre on the note, vibrato kept in shape.
+    auto measure = [] (double speed, double& centre, double& kept) {
+        auto e = makeEngine (speed);
+        auto y = runEngine (e, [] (double t) { return 60.3 + 0.4 * std::sin (2 * kPi * 5.5 * t); }, 3.0, 1.0);
+        double mean = 0, inPhase = 0;
+        for (double v : y) mean += v / double (y.size());
+        for (size_t i = 0; i < y.size(); ++i) inPhase += 2.0 * (y[i] - mean) * std::sin (2 * kPi * 5.5 * (1.0 + double (i) / 48000)) / double (y.size());
+        centre = 100 * (mean - 60.0);
+        kept = inPhase / 0.4; // fraction of the input vibrato present, in phase, in the output
+    };
+    double centre, kept;
+    for (double speed : { 20.0, 40.0 })
+    {
+        measure (speed, centre, kept);
+        std::printf ("  Speed %.0f: centre %+.2f c, vibrato kept %.0f %%\n", speed, centre, 100 * kept);
+        CHECK (std::abs (centre) < 1.0);
+        CHECK (kept > (speed == 20.0 ? 0.8 : 0.95) && kept < 1.05);
+    }
+    measure (0, centre, kept);
+    CHECK (std::abs (centre) < 1.0 && std::abs (kept) < 0.03); // Speed 0: flat
+}
+
+TEST (steady_onset_is_tuned_fast_scoop_stays_natural)
+{
+    // Speed 80 ms. Phrase starts 30 c sharp and steady: tuned within the onset window.
+    auto steady = makeEngine (80);
+    auto y = runEngine (steady, [] (double t) { return t < 0.1 ? 0.0 : 60.3; }, 0.3);
+    const double at30 = 100 * (y[size_t (0.130 * 48000)] - 60.0);
+    // Same Speed, phrase starts with a fast scoop (-60 c -> 0 in 40 ms, 15 st/s): left natural.
+    auto scoop = makeEngine (80);
+    auto natural = [] (double t) { return t < 0.1 ? 0.0 : 60.0 - 0.6 * std::max (0.0, 1.0 - (t - 0.1) / 0.04); };
+    auto z = runEngine (scoop, natural, 0.3);
+    const double at15 = 100 * (z[size_t (0.115 * 48000)] - natural (0.115));
+    std::printf ("  steady onset error @30 ms %+.2f c; scoop deviation from natural @15 ms %+.2f c\n", at30, at15);
+    CHECK (std::abs (at30) < 1.0);
+    CHECK (std::abs (at15) < 6.0);
+}
+
+TEST (yin_harmonic_hold)
+{
+    // Fundamental and every harmonic except 3, 6, 9 vanish for 12 ms: the waveform's shortest period
+    // becomes P/3 (19 semitones up). The estimate must hold the real pitch, not jump.
+    const double sr = 48000, f = 150.0;
+    auto gen = [&] (int n) {
+        const double t = n / sr;
+        const bool gap = t > 0.30 && t < 0.312;
+        double s = 0;
+        for (int h = 1; h <= 9; ++h) s += ((gap && h % 3 != 0) ? 0.0 : 1.0 / h) * std::sin (2 * kPi * f * h * t);
+        return float (0.3 * s); };
+    auto r = runDetector (sr, 0.5, gen);
+    int jumped = 0;
+    for (size_t i = 10; i < r.est.size(); ++i) jumped += r.est[i].voiced && std::abs (1200 * std::log2 (r.est[i].frequency / f)) > 50;
+    CHECK (jumped == 0);
 }
 
 TEST (end_to_end_correction)
@@ -694,7 +805,8 @@ TEST (hq_latency_and_alignment)
 
 TEST (hq_tracks_glides_better)
 {
-    // Off-key glide (vocal-like scoop between notes): HQ must leave less residual error at Speed 0.
+    // Off-key glide (vocal-like scoop between notes) at Speed 0. Slope prediction (CorrectionEngine)
+    // closes the detector's lag causally, so HQ off must be as good as HQ on, and both tight.
     const double sr = 48000;
     std::vector<float> x (size_t (sr * 1.5));
     double ph = 0;
@@ -718,8 +830,9 @@ TEST (hq_tracks_glides_better)
         return err[err.size() * 9 / 10];
     };
     const double off = residual (false), on = residual (true);
-    std::printf ("  glide p90 residual: HQ off %.1f c, HQ on %.1f c\n", off, on);
-    CHECK (on < off);
+    std::printf ("  glide p90 residual: HQ off %.2f c, HQ on %.2f c\n", off, on);
+    CHECK (off < 3.0 && on < 3.0);
+    CHECK (off < on + 0.5);
 }
 
 // ---------- doubler ----------

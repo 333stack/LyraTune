@@ -78,6 +78,7 @@ public:
     double detectorSampleRate() const noexcept { return detRate; }
     int frameLengthSamples() const noexcept { return frameLen; } // at detector rate
     int hopSamples() const noexcept { return hop * decim; }      // at host rate
+    double windowSeconds() const noexcept { return window / detRate; } // integration window (see Response lag)
 
 private:
     void analyse() noexcept;
