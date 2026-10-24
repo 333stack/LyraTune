@@ -3,6 +3,8 @@
 
 **A real-time automatic vocal tuner focused on low latency and natural sound.**
 
+![Lyra Tune interface](docs/screenshot.png)
+
 LyraTune is a real-time pitch-correction plugin designed to deliver responsive vocal tuning, from transparent correction to aggressive hard-tuned effects.
 
 ## Features
