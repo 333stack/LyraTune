@@ -528,6 +528,10 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 
 ## 16. Changelog
 
+### 0.3.1 — 2026-10-24
+- Fix: the root-note and main menus closed immediately in some hosts running under Wine. Menus now
+  open inside the plugin window.
+
 ### 0.3.0 — 2026-10-24
 - **HQ mode** (pill beside the latency readout): the pitch detector looks 2 ms ahead of the shifter.
   Test vocal at Speed 0: 90th-percentile error 15.1 → 9.9 cents; latency +2 ms (3.6 → 5.6 ms).

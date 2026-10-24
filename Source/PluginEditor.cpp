@@ -405,8 +405,9 @@ void LyraTuneEditor::showRootMenu()
     for (int i = 0; i < 12; ++i)
         m.addItem (i + 1, kNoteNames[i], true, i == cur);
     rootMenuOpen = true;
+    // Inside the plugin window: some hosts under Wine close a separate top-level menu window at once.
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (canvas).withTargetScreenArea (
-                         canvas.localAreaToGlobal (rootArea)),
+                         canvas.localAreaToGlobal (rootArea)).withParentComponent (this),
                      [sp = juce::Component::SafePointer<LyraTuneEditor> (this)] (int r) {
                          if (! sp) return;
                          sp->rootMenuOpen = false;
@@ -425,7 +426,7 @@ void LyraTuneEditor::showMainMenu()
     m.addSubMenu ("Window size", sizes);
     m.addSeparator();
     m.addItem (1000, juce::String (JucePlugin_Name) + " " + JucePlugin_VersionString, false);
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (menuButton),
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (menuButton).withParentComponent (this),
                      [sp = juce::Component::SafePointer<LyraTuneEditor> (this)] (int r) { if (sp && r >= 75 && r <= 150) sp->setScale (float (r) / 100.0f); });
 }
 
