@@ -905,6 +905,162 @@ TEST (doubler_gain_stable_and_safe)
 }
 
 // ---------- full chain ----------
+// ---------- LyraStrike (formant accent) ----------
+// Vowel-like test signal: harmonics of f0 shaped by resonances (formants) at F1, F2 and 2.9 kHz, all
+// scaled by `formantScale` (1.04 = the same vowel with its formants really 4 % higher).
+static std::vector<float> vowel (double sr, double f0, double F1, double seconds, double F2 = 1800.0, double formantScale = 1.0)
+{
+    const double F[3] { F1 * formantScale, F2 * formantScale, 2900.0 * formantScale }, B[3] { 160.0, 240.0, 360.0 }, A[3] { 1.0, 0.6, 0.3 };
+    std::vector<float> v (size_t (sr * seconds));
+    for (int h = 1; h * f0 < 0.45 * sr && h * f0 < 6000; ++h)
+    {
+        const double f = h * f0;
+        double a = 0;
+        for (int i = 0; i < 3; ++i) a += A[i] / std::sqrt (1.0 + std::pow ((f - F[i]) / (0.5 * B[i]), 2.0));
+        for (size_t n = 0; n < v.size(); ++n) v[n] += float (0.05 * a * std::sin (2 * kPi * f * double (n) / sr + 0.7 * h));
+    }
+    return v;
+}
+// Runs a FormantAccent over x (32-sample blocks), triggering `dir` at each time in `at` (s).
+static std::vector<float> runAccent (const std::vector<float>& x, double sr, std::vector<std::pair<double, int>> at, int* maxActiveSamples = nullptr)
+{
+    FormantAccent fa; fa.prepare (sr); fa.setEnabled (true);
+    std::vector<float> y = x;
+    int run = 0, longest = 0;
+    for (size_t n = 0; n < y.size(); n += 32)
+    {
+        for (auto [tt, dir] : at) if (size_t (tt * sr) >= n && size_t (tt * sr) < n + 32) fa.trigger (dir);
+        float* io[1] { y.data() + n };
+        fa.process (io, 1, int (std::min<size_t> (32, y.size() - n)));
+        run = fa.isActive() ? run + 32 : 0; longest = std::max (longest, run);
+    }
+    if (maxActiveSamples) *maxActiveSamples = longest;
+    return y;
+}
+// Amplitude-weighted mean frequency of harmonics 1..30 of f0 over [t0, t0 + len) (Goertzel-style projection).
+static double harmonicCentroid (const std::vector<float>& x, double sr, double f0, double t0, double len)
+{
+    double num = 0, den = 0;
+    for (int h = 1; h <= 30; ++h)
+    {
+        double re = 0, im = 0;
+        for (size_t n = size_t (t0 * sr); n < size_t ((t0 + len) * sr); ++n)
+        { re += x[n] * std::cos (2 * kPi * h * f0 * double (n) / sr); im += x[n] * std::sin (2 * kPi * h * f0 * double (n) / sr); }
+        const double a = std::sqrt (re * re + im * im);
+        num += a * h * f0; den += a;
+    }
+    return num / den;
+}
+
+TEST (strike_moves_formants_not_pitch)
+{
+    // Spectral centroid of the harmonics during the strongest 10 ms of the accent, compared with the same
+    // vowels whose formants really move 4 %. Summed over 4 vowels and 2 voices (one vowel alone is noisy:
+    // with sparse harmonics a formant move barely changes the centroid).
+    for (double sr : { 44100.0, 48000.0, 96000.0 })
+    {
+        double got[2] {}, want[2] {}, worst = 0, meanAbs = 0;
+        for (double f0 : { 110.0, 220.0 })
+            for (auto [F1, F2] : { std::pair { 700.0, 1200.0 }, { 400.0, 2000.0 }, { 550.0, 900.0 }, { 300.0, 2300.0 } })
+            {
+                auto x = vowel (sr, f0, F1, 0.6, F2);
+                for (int d = 0; d < 2; ++d) // d 0: note up -> formants down; d 1: note down -> formants up
+                {
+                    auto y = runAccent (x, sr, { { 0.30, d == 0 ? +1 : -1 } });
+                    auto truth = vowel (sr, f0, F1, 0.6, F2, d == 0 ? 0.96 : 1.04);
+                    const double c0 = harmonicCentroid (x, sr, f0, 0.303, 0.010);
+                    got[d] += harmonicCentroid (y, sr, f0, 0.303, 0.010) / c0 - 1;
+                    want[d] += harmonicCentroid (truth, sr, f0, 0.303, 0.010) / c0 - 1;
+                    // Pitch: harmonics are never moved, so the accent must average out; the detector sees
+                    // a brief transient while the waveform shape changes inside its window.
+                    YinDetector det; det.prepare (sr, {});
+                    double sum = 0; int cnt = 0; size_t k = 0;
+                    det.process (y.data(), int (y.size()), [&] (int, const PitchEstimate& e) {
+                        if (++k > 50 && e.voiced) { const double c = 1200 * std::log2 (e.frequency / f0); worst = std::max (worst, std::abs (c)); sum += c; ++cnt; } });
+                    meanAbs = std::max (meanAbs, std::abs (sum / std::max (1, cnt)));
+                }
+            }
+        std::printf ("  sr %.0f: formant move vs a true 4 %% move: down %.0f %%, up %.0f %%; pitch: worst mean %.2f c, worst transient %.1f c\n",
+                     sr, 100 * got[0] / want[0], 100 * got[1] / want[1], meanAbs, worst);
+        CHECK (got[0] < 0 && got[1] > 0);                   // right directions
+        CHECK (got[0] / want[0] > 0.6 && got[0] / want[0] < 1.6);
+        CHECK (got[1] / want[1] > 0.6 && got[1] / want[1] < 1.6);
+        CHECK (meanAbs < 0.3);
+        CHECK (worst < 10.0);
+    }
+}
+
+TEST (strike_is_seamless_and_bounded)
+{
+    const double sr = 48000;
+    auto x = vowel (sr, 180.0, 700.0, 1.0);
+    int longest = 0;
+    // Rapid retriggers in alternating directions (worst case), then silence after.
+    auto y = runAccent (x, sr, { { 0.30, +1 }, { 0.31, -1 }, { 0.318, +1 }, { 0.6, -1 } }, &longest);
+    double maxStepX = 0, maxStepY = 0, eX = 0, eY = 0, maxDiffOutside = 0;
+    for (size_t n = 1; n < x.size(); ++n)
+    {
+        CHECK (std::isfinite (y[n]));
+        maxStepX = std::max (maxStepX, double (std::abs (x[n] - x[n - 1])));
+        maxStepY = std::max (maxStepY, double (std::abs (y[n] - y[n - 1])));
+        const double t = double (n) / sr;
+        if ((t > 0.30 && t < 0.35) || (t > 0.6 && t < 0.63)) { eX += double (x[n]) * x[n]; eY += double (y[n]) * y[n]; }
+        if (t < 0.30 || (t > 0.36 && t < 0.6) || t > 0.64) maxDiffOutside = std::max (maxDiffOutside, double (std::abs (y[n] - x[n])));
+    }
+    const double levelDb = 10 * std::log10 (eY / eX);
+    std::printf ("  max step in %.4f out %.4f; level during accents %+.2f dB; max diff outside accents %.2g; longest active %.1f ms\n",
+                 maxStepX, maxStepY, levelDb, maxDiffOutside, 1000.0 * longest / sr);
+    CHECK (maxStepY < 1.3 * maxStepX);        // no clicks
+    CHECK (std::abs (levelDb) < 1.0);         // no level bump
+    CHECK (maxDiffOutside == 0.0);            // bit-exact passthrough between accents
+    CHECK (longest < int (0.050 * sr));       // accent ends (25 ms + coefficient ramp + retriggers)
+    // Disabled: triggers are ignored, output is the input.
+    FormantAccent off; off.prepare (sr);
+    std::vector<float> z = x;
+    for (size_t n = 0; n < z.size(); n += 32) { if (n == 9600) off.trigger (1); float* io[1] { z.data() + n }; off.process (io, 1, 32); }
+    CHECK (z == x);
+}
+
+TEST (strike_in_chain_triggers_on_note_changes_only)
+{
+    // Sung notes A3 -> C4 -> G3, a 100 ms gap, then E4: three note changes, the onset after the gap is not one.
+    const double sr = 48000;
+    auto noteAt = [] (double t) { return t < 0.4 ? 57.0 : t < 0.8 ? 60.0 : t < 1.2 ? 55.0 : t < 1.3 ? -1.0 : 64.0; };
+    std::vector<float> L (size_t (sr * 1.7));
+    double ph = 0;
+    for (size_t n = 0; n < L.size(); ++n)
+    {
+        const double m = noteAt (double (n) / sr);
+        if (m < 0) { L[n] = 0; continue; }
+        ph += 2 * kPi * midiToFreq (m + 0.2) / sr;
+        double v = 0; for (int h = 1; h <= 8; ++h) v += std::sin (h * ph) / h;
+        L[n] = float (0.25 * v);
+    }
+    std::vector<float> R = L;
+    TunerChain chain; chain.prepare (sr, 70.0);
+    TunerChain::Settings s; s.correction.speedMs = 0; s.strike = true; s.minFreq = 100;
+    chain.setSettings (s); chain.reset();
+    int starts = 0; bool was = false; std::vector<double> dirs; dirs.reserve (16);
+    const long before = gAllocs.load();
+    for (size_t n = 0; n + 32 <= L.size(); n += 32)
+    {
+        float* io[2] { L.data() + n, R.data() + n };
+        chain.setSettings (s);
+        chain.process (io, 2, 32);
+        const bool on = chain.formantAccent().isActive();
+        if (on && ! was) ++starts;
+        if (on && dirs.size() < size_t (starts)) dirs.push_back (0);
+        if (on) dirs.back() += chain.formantAccent().accent();
+        was = on;
+    }
+    CHECK (gAllocs.load() == before);
+    std::printf ("  accents: %d, directions:", starts);
+    for (double d : dirs) std::printf (" %s", d < 0 ? "formants-down" : "formants-up");
+    std::printf ("\n");
+    CHECK (starts == 2);                                   // A3->C4, C4->G3; the E4 onset after silence is not a change
+    CHECK (dirs.size() == 2 && dirs[0] < 0 && dirs[1] > 0); // up -> darker, down -> brighter
+}
+
 TEST (chain_rt_no_alloc_and_switching)
 {
     const double sr = 48000;
@@ -924,6 +1080,7 @@ TEST (chain_rt_no_alloc_and_switching)
         if (b == 500) { s.correction.stabilizerMs = 80; s.correction.sustain = 0.7; s.correction.speedMs = 30; }
         if (b == 550) { s.doubler.enabled = true; s.doubler.blend = 0.6f; s.hq = true; }
         if (b == 650) s.hq = false;
+        if (b == 600) s.strike = true;
         chain.setSettings (s);
         float* io[2] { L.data() + n, R.data() + n };
         chain.process (io, 2, 64);

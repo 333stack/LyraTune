@@ -13,6 +13,7 @@ juce::Path notes();
 juce::Path help();
 juce::Path menu();
 juce::Path copyArrow();
+juce::Path bolt();
 }
 
 // Flat icon button; toggleable buttons light up in the accent colour when on.
@@ -22,6 +23,7 @@ public:
     IconButton (const juce::String& name, juce::Path icon, juce::String caption = {});
     void paintButton (juce::Graphics&, bool highlighted, bool down) override;
     juce::Colour onColour = theme::violet;
+    float glowStrength = 0.55f; // selected glow of captioned toggles
 
 private:
     juce::Path icon;

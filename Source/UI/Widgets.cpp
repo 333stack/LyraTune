@@ -63,6 +63,12 @@ juce::Path copyArrow()
     p.startNewSubPath (9, 6); p.lineTo (15, 12); p.lineTo (9, 18);
     return p;
 }
+juce::Path bolt()
+{
+    juce::Path p;
+    p.startNewSubPath (13, 2); p.lineTo (5, 13); p.lineTo (11, 13); p.lineTo (10, 22); p.lineTo (19, 10); p.lineTo (13, 10); p.closeSubPath();
+    return p;
+}
 } // namespace icons
 
 IconButton::IconButton (const juce::String& name, juce::Path i, juce::String c)
@@ -82,7 +88,7 @@ void IconButton::paintButton (juce::Graphics& g, bool hi, bool down)
     }
     const bool on = getToggleState();
     if (on && caption.isNotEmpty() && isEnabled()) // captioned setting toggles: quiet selected treatment
-        drawSelectionGlow (g, r.reduced (2.0f, 3.0f), onColour, 0.55f);
+        drawSelectionGlow (g, r.reduced (2.0f, 3.0f), onColour, glowStrength);
     const auto col = ! isEnabled() ? textFaint : (on ? onColour : (hi ? theme::text : textDim));
     auto iconArea = caption.isEmpty() ? r : r.removeFromLeft (r.getHeight());
     const float s = juce::jmin (iconArea.getWidth(), iconArea.getHeight()) * 0.62f;

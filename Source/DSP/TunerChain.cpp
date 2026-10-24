@@ -22,6 +22,7 @@ void TunerChain::prepare (double sampleRate, double lowestMinFreq)
     dryDelay.setDelay (latencySamples());
     engine.setTiming (yin.windowSeconds(), latencySamples() / sr);
     doubler.prepare (sr);
+    strike.prepare (sr);
     wetStep = float (1.0 / (0.010 * sr));
     reset();
 }
@@ -34,6 +35,9 @@ void TunerChain::reset() noexcept
     dryDelay.reset();
     aheadDelay.reset();
     doubler.reset();
+    strike.reset();
+    strikeLastNote = -1;
+    strikeSilentHops = 0;
     wet = wetTarget;
 }
 
@@ -54,6 +58,7 @@ void TunerChain::setSettings (const Settings& s) noexcept
         engine.setTiming (yin.windowSeconds(), latencySamples() / sr);
     }
     doubler.setParams (s.doubler);
+    strike.setEnabled (s.strike);
     wetTarget = s.bypass ? 0.0f : 1.0f;
 }
 
@@ -86,6 +91,18 @@ void TunerChain::process (float* const* ch, int numCh, int total) noexcept
             engine.onEstimate (e, i);
             shifter.setPeriod (e.voiced ? sr / e.frequency : 0.0);
             doubler.setPeriod (e.voiced ? sr / e.frequency : 0.0);
+            // LyraStrike: accent each note-to-note change. Pending (stabilizer) or short consonant gaps
+            // keep the previous note; >= 60 ms unvoiced starts a new phrase (no accent on its first note).
+            if (const int note = engine.targetNote(); note >= 0)
+            {
+                if (strikeLastNote >= 0 && note != strikeLastNote)
+                    strike.trigger (note > strikeLastNote ? 1 : -1);
+                strikeLastNote = note;
+            }
+            if (engine.inputMidi() > 0)
+                strikeSilentHops = 0;
+            else if (++strikeSilentHops * yin.hopSamples() >= CorrectionEngine::kOnsetGapSeconds * sr)
+                strikeLastNote = -1;
             if (telemetry != nullptr)
             {
                 Telemetry t;
@@ -104,6 +121,7 @@ void TunerChain::process (float* const* ch, int numCh, int total) noexcept
 
         aheadDelay.process (io, numCh, n); // HQ lookahead (0 samples when off)
         shifter.process (io, numCh, n, ratio);
+        strike.process (io, numCh, n); // before the doubler: the doubled voices carry the accent too
         doubler.process (io, numCh, n);
         dryDelay.process (dryPtr, numCh, n);
 

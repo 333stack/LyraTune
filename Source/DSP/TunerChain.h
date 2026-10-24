@@ -2,6 +2,7 @@
 #include "Common/FixedDelay.h"
 #include "Common/SpscQueue.h"
 #include "Doubler.h"
+#include "FormantAccent.h"
 #include "Pitch/CorrectionEngine.h"
 #include "Pitch/PitchShifter.h"
 #include "Pitch/YinDetector.h"
@@ -10,7 +11,7 @@ namespace lyra
 {
 // The complete real-time tuner signal path, independent of any plugin framework so the plugin and
 // the offline render/test tools run identical code:
-//   mono sum -> YinDetector -> CorrectionEngine -> PitchShifter (stereo-linked) -> Doubler
+//   mono sum -> YinDetector -> CorrectionEngine -> PitchShifter (stereo-linked) -> FormantAccent -> Doubler
 //   HQ mode: the shifter's input is delayed by kLookaheadSeconds while the detector hears it
 //   undelayed, so corrections land on time (adds that much reported latency).
 //   dry path delayed by the same total latency; bypass = 10 ms linear crossfade between the two.
@@ -43,6 +44,7 @@ public:
         bool hq = false;       // 2 ms detector lookahead (+2 ms latency)
         bool bypass = false;
         Doubler::Params doubler;
+        bool strike = false;   // LyraStrike formant accent on note changes
     };
 
     void prepare (double sampleRate, double lowestMinFreq);
@@ -62,6 +64,7 @@ public:
 
     const CorrectionEngine& correction() const noexcept { return engine; }
     const YinDetector& detector() const noexcept { return yin; }
+    const FormantAccent& formantAccent() const noexcept { return strike; }
 
 private:
     YinDetector yin;
@@ -69,6 +72,8 @@ private:
     PitchShifter shifter;
     FixedDelay dryDelay, aheadDelay;
     Doubler doubler;
+    FormantAccent strike;
+    int strikeLastNote = -1, strikeSilentHops = 0; // previous note for LyraStrike's direction
     int lookahead = 0;
     bool hq = false;
     TelemetryQueue* telemetry = nullptr;

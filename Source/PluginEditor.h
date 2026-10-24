@@ -51,7 +51,7 @@ private:
     Knob speedKnob, amountKnob, sustainKnob;
     ValueStrip refStrip, widthStrip, blendStrip;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> speedAttach, amountAttach, sustainAttach, refAttach, widthAttach, blendAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttach, doublerAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttach, doublerAttach, strikeAttach;
     Orb orb;
     KeyboardPanel keyboard;
     SegmentedControl scaleSeg, stabilizerSeg, rangeSeg;
@@ -65,6 +65,7 @@ private:
     IconButton detectedButton { "detected", icons::notes(), "Detected Notes" };
     IconButton bypassButton { "bypass", icons::power(), "Global Bypass" };
     IconButton doublerButton { "doubler", icons::power(), "Doubler" };
+    IconButton strikeButton { "strike", icons::bolt(), "LyraStrike" };
     juce::HyperlinkButton credit { "made with <3 by stack", juce::URL ("https://soundcloud.com/222stack") };
     juce::Rectangle<int> rootArea;
     bool rootMenuOpen = false;
@@ -75,7 +76,7 @@ private:
     double lastVoicedMs = -1e9;
     float latestRms = 0;
     juce::String latencyText;
-    bool lastDoublerOn = false;
+    bool lastDoublerOn = false, lastStrikeOn = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LyraTuneEditor)
 };

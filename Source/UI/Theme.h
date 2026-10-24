@@ -18,6 +18,7 @@ inline const juce::Colour pink { 0xffff70b3 };
 inline const juce::Colour blue { 0xff6aa8ff };
 inline const juce::Colour lavender { 0xffbcaeff };
 inline const juce::Colour warn { 0xffffb35c };
+inline const juce::Colour heat { 0xffff3d5e }; // "hot" red: Speed overload, LyraStrike
 
 // Position 0..1 along the signature pink -> violet -> blue gradient.
 inline juce::Colour accentAt (float t)

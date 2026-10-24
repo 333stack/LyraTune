@@ -64,7 +64,6 @@ void Knob::paint (juce::Graphics& g)
     const float t = float (valueToProportionOfLength (getValue()));
     const bool hot = isMouseOverOrDragging() || hasKeyboardFocus (false);
     const float amt = overloadAmount();
-    const juce::Colour heat (0xffff3d5e);
 
     // Overload glow behind the dial (pulses faster and brighter the deeper it goes).
     if (amt > 0.0f || burst > 0.0f)

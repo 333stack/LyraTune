@@ -73,6 +73,7 @@ Status levels: **Implemented** (code exists) · **Unit-tested** · **Measured** 
 | Versioned state save/restore | Implemented (project reload not yet verified in a host) |
 | HQ mode (2 ms detector lookahead) | Unit-tested, measured |
 | Doubler (two drifting, detuned voices; Width, Blend) | Unit-tested, measured, host-tested (visual) |
+| LyraStrike (formant accent on note changes) | Unit-tested, measured (not yet host-tested) |
 | Presets, groups, reference tone | Planned (§15) |
 
 ---
@@ -99,6 +100,12 @@ Insert Lyra Tune on a **dry, monophonic** vocal track (before reverb, delay or d
 - **A / B** with the chevron between them: switch between two complete settings snapshots; the
   chevron copies the current snapshot to the other one.
 - **?**: show or hide tooltips.
+
+**Doubler and LyraStrike (top-left)** — the Doubler block (power button, Width, Blend), and below
+it the **LyraStrike** toggle (bolt icon). LyraStrike makes every note change hit harder: for 25 ms
+the formants dip 4 % on a step up (darker, larger) or rise 4 % on a step down (brighter, smaller),
+then return. The tuned pitch is not touched and no latency is added. When on, the toggle and its
+frame glow red; off, no glow. The first note of a phrase (after ≥ 60 ms of silence) gets no accent.
 
 **Orb (left)** — a live view of what the tuner is doing:
 - Centre: the target note (e.g. `E4`) and how far the sung pitch is from it in cents (`+28 ct`).
@@ -159,6 +166,8 @@ again to close the menu.
   Mid so fast runs don't flip between notes.
 - For "natural start, locked finish": Speed 40–80 ms with Sustain +50 or more.
 - For transparent correction: Speed 30–80 ms, Amount 70–100 %.
+- LyraStrike accents every target change, including fast flips on runs; pair it with the Stabilizer
+  if busy passages get too much bite.
 - Change **Range** while playback is stopped: it changes the reported latency.
 
 ---
@@ -183,6 +192,7 @@ Parameter IDs are stable and must never be renamed — saved projects and automa
 | `doubler` | Doubler | off / on | off | yes |
 | `dblWidth` | Doubler Width | 0 … 100 % | 70 % | yes |
 | `dblBlend` | Doubler Blend | 0 … 100 % | 50 % | yes |
+| `strike` | LyraStrike | off / on | off | yes |
 
 Display preferences (HeatMaps, Detected Notes, tooltips, window size) are saved with the project but
 are not parameters.
@@ -321,7 +331,31 @@ they never click.
 - One read head for both channels: no stereo image drift.
 - Ratio limit ±7 semitones. Formants move with the pitch (see §14).
 
-### 6.5 Supporting pieces
+### 6.5 LyraStrike — `FormantAccent`
+A formant shift with the pitch untouched, computed causally (no added latency):
+- `e = A(z)·x` whitens the tuned signal with its own spectral envelope (LPC, FIR lattice);
+  `y = g · e / A_s(z)` re-colours it with the envelope of the **same 20 ms window read `s` times
+  faster** (its spectrum, and so its formants, scale by `s`; IIR lattice). `g = √(E_s/E)` holds the
+  level. The harmonics stay in `e` and are never resampled, so the pitch cannot move.
+- Accent: `u` ramps to ±1 over 3 ms (raised cosine) and back to 0 over 22 ms; `s = 1 + 0.04·u`.
+  Step up → `u = −1`; step down → `u = +1`. Retriggers ramp from the current `u`.
+- Trigger: a change of the target note from one note to another. A pending (Stabilizer) note or a
+  short consonant gap keeps the previous note; ≥ 60 ms unvoiced starts a new phrase (no accent).
+- LPC order 16 per 48 kHz (max 32), Gaussian lag window 100 Hz, −40 dB noise floor; coefficients
+  every 2 ms, reflection coefficients interpolated per sample (stable). Autocorrelation is strided at
+  high sample rates so each update costs the same at any rate.
+- Seamless: with `k_s = k` and equal lattice states the cascade is an exact identity, so accents fade
+  in and out without a seam, and between accents the audio passes untouched (bit-exact, no CPU).
+- Sits after the pitch shifter and before the Doubler (the doubled voices carry the accent).
+- Measured (synthetic 3-formant vowels, f0 110/220 Hz, 44.1–96 kHz): the formant region moves
+  **68–91 % of a true 4 % move**, in the right direction; pitch averaged over the accent unchanged
+  (< 0.25 c); the detector sees a transient ≤ 1.9 c while the waveform shape changes. Level within
+  0.03 dB; no new clicks. An LPC envelope is smoother than a real vocal tract's, so sharp formant
+  peaks move less than an ideal 4 % shift (per-harmonic detail ≈ 25–45 % of ideal).
+- shortcut: order, lag window and window length were chosen on synthetic vowels; revisit by ear on
+  very high or very low voices.
+
+### 6.6 Supporting pieces
 - `FixedDelay`: integer dry-path delay; latency changes crossfade over 5 ms (no click).
 - `Biquad`: transposed direct form II filters.
 - `SpscQueue`: lock-free single-producer/single-consumer queue for UI telemetry.
@@ -431,7 +465,7 @@ A native Linux VST3 is a different binary and will not load in a Windows DAW run
 
 ## 12. Testing and measurements
 
-### Automated tests (`scripts/test.sh`) — 41 tests, all passing; ASan/UBSan clean
+### Automated tests (`scripts/test.sh`) — 43 tests, all passing; ASan/UBSan clean
 - Frequency ↔ MIDI conversion, reference pitch, cents error.
 - Scale masks, transposition, nearest allowed note, ties, hysteresis, mask changes, empty mask.
 - YIN on sines 80–880 Hz at 44.1 / 48 / 88.2 / 96 / 192 kHz: max error < 3 cents, > 99 % voiced.
@@ -449,6 +483,9 @@ A native Linux VST3 is a different binary and will not load in a Windows DAW run
 - Sustain: measured time constant after a 1 s hold at Speed 80 ms: 80 ms (0), 10 ms (+100),
   640 ms (−100); Speed 0 stays instant.
 - End to end: a tone 35 cents sharp is corrected to within 0.04 cents.
+- LyraStrike: formant move vs a true 4 % move, direction, pitch kept (44.1/48/96 kHz); no clicks,
+  level kept, bit-exact passthrough between accents, accent ends; in the chain, accents fire only on
+  note-to-note changes (not phrase onsets) with the right direction, no allocations.
 - Full chain: zero heap allocations while switching bypass/Range/Speed; no clicks (max sample step
   equals the input's own).
 
@@ -504,7 +541,12 @@ Fewer target changes means less note-flipping on fast runs; the higher error is 
 - Detector, 128-sample blocks, Low range (worst case), native Release build, 6-core/12-thread
   laptop CPU: **48 kHz avg 218 µs, max 338 µs** per block (12.7 % of the 2667 µs block budget);
   192 kHz avg 56 µs, max 186 µs.
-- Full chain offline throughput: roughly 55× real time for stereo 48 kHz (≈ 2 % of one core).
+- Full chain offline throughput (stereo 48 kHz, 211 s vocal): Low range ~15× real time, High range
+  ~60×. LyraStrike on: +2 s for 211 s (~1 % of a core on average; it only works during accents).
+- LyraStrike worst case (retriggered continuously, 128-sample stereo blocks, measured with a DAW
+  running on the same machine): 48 kHz avg 112 µs / max ~210–470 µs (budget 2667 µs); 192 kHz avg 93 µs,
+  max ~310–730 µs (budget 667 µs). At 192 kHz with 128-sample buffers, the detector's and
+  LyraStrike's worst cases together can approach the block budget: use ≥ 256-sample buffers there.
 
 ### Host testing (Windows DAW under Wine, 48 kHz / 128 samples)
 Verified: plugin scan and load, audio passthrough, correction on real vocals, UI rendering and
@@ -537,6 +579,7 @@ Source/
   Parameters.h              stable parameter IDs, ranges, defaults
   DSP/TunerChain.*          complete real-time signal path
   DSP/Doubler.*             two-voice doubler
+  DSP/FormantAccent.*       LyraStrike formant accent
   DSP/Pitch/                YinDetector, TargetSelector, CorrectionEngine, PitchShifter, Scale, PitchMath
   DSP/Common/               Biquad, FixedDelay, SpscQueue
   UI/                       Theme, LookAndFeel, Knob, Orb, KeyboardPanel, Widgets
@@ -574,6 +617,12 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 ---
 
 ## 16. Changelog
+
+### 0.6.0 — 2026-10-24
+- **LyraStrike**: a 25 ms formant accent on every note change (±4 %: darker going up, brighter going
+  down), with the tuned pitch untouched and no added latency. Toggle below the Doubler; glows red
+  when on. New parameter `strike` (default off; older projects load with it off).
+- Fix: the 0.5.0 notes said 41 tests; there were 40. Now 43.
 
 ### 0.5.0 — 2026-10-24
 New tuning algorithm (no added latency, no new parameters; projects will sound different):
