@@ -528,7 +528,7 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 
 ## 16. Changelog
 
-### Unreleased
+### 0.3.0 — 2026-10-24
 - **HQ mode** (pill beside the latency readout): the pitch detector looks 2 ms ahead of the shifter.
   Test vocal at Speed 0: 90th-percentile error 15.1 → 9.9 cents; latency +2 ms (3.6 → 5.6 ms).
 - **Doubler**: two voices built from the tuned signal, each with its own slowly drifting delay and
