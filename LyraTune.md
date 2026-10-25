@@ -1,6 +1,6 @@
 # Lyra Tune — Documentation
 
-**Version 0.2.0** · Real-time automatic vocal pitch correction · VST3 (Windows x64)
+**Version 0.6.7** · Real-time automatic vocal pitch correction · VST3 (Windows x64, macOS) · AU (macOS)
 
 Lead design and engineering: **stack**
 Development assistance: Claude (AI assistant)
@@ -615,7 +615,9 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 - After a Range change the new latency is reported to the host within ~100 ms; change Range while
   stopped.
 - Host automation of parameters is also recorded in the undo history.
-- Windows x64 VST3 only. Other formats and native Linux/macOS builds are not set up.
+- Formats: VST3 for Windows x64; VST3 and AU for macOS 11+ (universal). The macOS build is built and
+  validated on GitHub Actions (auval, pluginval strictness 5) but not yet tested in a DAW on real
+  hardware, and it is not notarized (users must clear the quarantine flag). No native Linux build.
 - The credit link opens the system browser; under Wine this depends on the prefix's browser setup.
 
 ---
@@ -630,6 +632,12 @@ third_party/JUCE            plugin framework (git submodule, 9.0.4)
 ---
 
 ## 16. Changelog
+
+### 0.6.7 — 2026-10-24
+- **macOS build**: VST3 and Audio Unit, universal (Apple Silicon + Intel), macOS 11 or later. Built,
+  ad-hoc signed and validated (auval, pluginval strictness 5) by `.github/workflows/macos.yml`. Not
+  notarized; not yet tested in a DAW on real hardware.
+- No DSP or sound changes; Windows build unchanged apart from the version number.
 
 ### 0.6.6 — 2026-10-24
 - LyraStrike defaults are now **Amount ±7.5 %, Length 80 ms** (were ±4 % / 25 ms). Projects saved

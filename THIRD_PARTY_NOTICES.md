@@ -7,6 +7,7 @@ Lyra Tune includes or links the following components. Their license texts are re
 |---|---|---|---|
 | JUCE 9.0.4 (git submodule) | plugin framework | AGPLv3 (Lyra Tune uses the AGPLv3 option) | `licenses/JUCE-LICENSE.md`, `LICENSE` |
 | VST3 SDK (bundled in the framework) | VST3 plugin interface | MIT | `licenses/VST3_SDK-LICENSE.txt` |
+| Apple AudioUnitSDK (bundled in the framework; macOS build only) | Audio Unit plugin interface | Apache-2.0 | `licenses/AudioUnitSDK-LICENSE.txt` |
 | zlib (bundled in the framework) | compression | zlib License | `licenses/zlib-LICENSE.txt` |
 | libpng (bundled in the framework) | PNG images | libpng License | `licenses/libpng-LICENSE.txt` |
 | libjpeg (bundled in the framework) | JPEG images | IJG License | `licenses/libjpeg-README.txt` |

@@ -1,0 +1,77 @@
+# macOS build: universal (arm64 + x86_64) VST3 + AU, ad-hoc signed, validated with pluginval.
+# Run from the Actions tab (or `gh workflow run macos.yml`); the zip is uploaded as a build artifact.
+name: macOS build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  macos:
+    runs-on: macos-14
+    env:
+      PLUGINVAL_VERSION: v1.0.4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: DSP unit tests
+        run: |
+          cmake -S Tests -B build/tests -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/tests -j3 --target dsp_tests
+          build/tests/dsp_tests
+
+      - name: Build plugin
+        run: |
+          cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          cmake --build build/mac -j3 --target LyraTune_VST3 LyraTune_AU
+
+      - name: Sign (ad-hoc) and check architectures
+        run: |
+          A=build/mac/LyraTune_artefacts/Release
+          for b in "$A/VST3/Lyra Tune.vst3" "$A/AU/Lyra Tune.component"; do
+            codesign --force --deep --sign - "$b"
+            codesign --verify --deep --strict --verbose=2 "$b"
+            lipo -info "$b/Contents/MacOS/Lyra Tune"
+            lipo "$b/Contents/MacOS/Lyra Tune" -verify_arch arm64 x86_64
+          done
+
+      - name: Validate (auval + pluginval)
+        run: |
+          A=build/mac/LyraTune_artefacts/Release
+          mkdir -p ~/Library/Audio/Plug-Ins/VST3 ~/Library/Audio/Plug-Ins/Components
+          cp -R "$A/VST3/Lyra Tune.vst3" ~/Library/Audio/Plug-Ins/VST3/
+          cp -R "$A/AU/Lyra Tune.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -v aufx LyTn Lyra
+          curl -sSfL -o pluginval.zip \
+            "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_VERSION/pluginval_macOS.zip"
+          unzip -q pluginval.zip
+          PV=pluginval.app/Contents/MacOS/pluginval
+          "$PV" --strictness-level 5 --validate-in-process --timeout-ms 600000 \
+            --validate ~/Library/Audio/Plug-Ins/VST3/"Lyra Tune.vst3"
+          "$PV" --strictness-level 5 --validate-in-process --timeout-ms 600000 \
+            --validate ~/Library/Audio/Plug-Ins/Components/"Lyra Tune.component"
+
+      - name: Package
+        run: |
+          V=$(sed -n 's/^project(LyraTune VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          A=build/mac/LyraTune_artefacts/Release
+          P=pkg
+          mkdir -p $P
+          cp -R "$A/VST3/Lyra Tune.vst3" "$A/AU/Lyra Tune.component" $P/
+          cp -R LICENSE THIRD_PARTY_NOTICES.md licenses $P/
+          cp packaging/INSTALL-macOS.txt $P/INSTALL.txt
+          # ditto keeps the bundles' signatures and symlinks intact (plain zip can break them)
+          (cd $P && ditto -c -k --sequesterRsrc . "../LyraTune-$V-macos-universal.zip")
+          shasum -a 256 "LyraTune-$V-macos-universal.zip"
+          echo "ZIP=LyraTune-$V-macos-universal.zip" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lyratune-macos
+          path: ${{ env.ZIP }}
+          if-no-files-found: error

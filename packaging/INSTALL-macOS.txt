@@ -1,0 +1,21 @@
+Lyra Tune 0.6.7 - VST3 + Audio Unit, macOS 11 or later (Apple Silicon and Intel)
+
+Install:
+  VST3 (Ableton Live, FL Studio, Reaper, Cubase, Studio One, Bitwig...):
+    copy "Lyra Tune.vst3"      to  ~/Library/Audio/Plug-Ins/VST3/
+  Audio Unit (Logic Pro, GarageBand, also most VST3 hosts):
+    copy "Lyra Tune.component" to  ~/Library/Audio/Plug-Ins/Components/
+  then rescan plugins in your DAW (Logic: restart it; it validates new AUs on launch).
+
+First launch:
+  The plugin is signed ad-hoc but not notarized by Apple, so macOS blocks it after download.
+  Allow it once in Terminal:
+    xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"Lyra Tune.vst3"
+    xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/"Lyra Tune.component"
+  or allow it in System Settings > Privacy & Security after the first warning.
+
+Added latency: 3.6 ms (Range High), 5.3 ms (Mid), 7.4 ms (Low) at 48 kHz, +2 ms with HQ on; reported to the host.
+Documentation: LyraTune.md in the source repository.
+
+Lead design and engineering: stack
+License: GNU AGPL v3 (LICENSE). Third-party notices: THIRD_PARTY_NOTICES.md, licenses/.

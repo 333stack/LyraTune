@@ -4,7 +4,7 @@
 
 ![LyraTune vocal pitch correction VST3 plugin interface with the Speed knob at -3 ms negative retune speed, E major scale, pitch orb and input/output HeatMaps](docs/screenshot.png)
 
-LyraTune is a free real-time pitch-correction plugin (VST3, Windows x64, also runs in Windows DAWs under Wine on Linux). It tunes vocals live with 3.6 ms of added latency, from transparent correction to the hard, robotic "snapped" vocal sound — and past it, with **negative retune speed**.
+LyraTune is a free real-time pitch-correction plugin (VST3 for Windows x64 and macOS, Audio Unit for macOS; also runs in Windows DAWs under Wine on Linux). It tunes vocals live with 3.6 ms of added latency, from transparent correction to the hard, robotic "snapped" vocal sound — and past it, with **negative retune speed**.
 
 ## ⚡ Negative Retune Speed — harder than instant
 
@@ -55,13 +55,14 @@ The Speed knob has a definitive 0 ms notch and visibly "overloads" past it: the 
 
 ## Download & Install
 
-Get `LyraTune-0.4.0-win-x64-vst3.zip` from the [Releases](https://github.com/333stack/LyraTune/releases/latest) page.
+Get the zip for your system from the [Releases](https://github.com/333stack/LyraTune/releases/latest) page: `LyraTune-<version>-win-x64-vst3.zip` or `LyraTune-<version>-macos-universal.zip`.
 
 - **Windows:** unzip and copy the `Lyra Tune.vst3` folder to `C:\Program Files\Common Files\VST3\`, then rescan plugins in your DAW (FL Studio, Ableton Live, Reaper, Studio One, Cubase, Bitwig…).
 - **Linux (Windows DAW under Wine):** copy it to the same folder inside the DAW's Wine prefix:
   `<prefix>/drive_c/Program Files/Common Files/VST3/`.
+- **macOS 11+ (Apple Silicon and Intel):** copy `Lyra Tune.vst3` to `~/Library/Audio/Plug-Ins/VST3/` and/or `Lyra Tune.component` (Audio Unit, for Logic Pro and GarageBand) to `~/Library/Audio/Plug-Ins/Components/`. The build is not notarized, so allow it once with `xattr -dr com.apple.quarantine <plugin>` or in System Settings → Privacy & Security. The macOS build passes automated validation (pluginval, auval) but has not yet been tested in a DAW on real hardware.
 
-Format: VST3, Windows x64. Verify downloads with `SHA256SUMS.txt`.
+Formats: VST3 (Windows x64, macOS universal), Audio Unit (macOS universal). Verify downloads with `SHA256SUMS.txt`.
 
 ## FAQ
 
@@ -77,6 +78,8 @@ Format: VST3, Windows x64. Verify downloads with `SHA256SUMS.txt`.
 
 **Can I use it for live vocals?** Yes. It is designed for real-time monitoring: 3.6 ms added latency at 48 kHz in the High range, plus your audio interface's buffer.
 
+**Does it run on Mac?** Yes, from 0.6.7: VST3 and Audio Unit, universal (Apple Silicon and Intel), macOS 11 or later.
+
 **Does it run on Linux?** Through a Windows DAW running under Wine. A native Linux build is not available yet.
 
 ## Technical Overview
@@ -89,7 +92,7 @@ Format: VST3, Windows x64. Verify downloads with `SHA256SUMS.txt`.
 | Latency compensation | Host-reported plugin latency |
 | Scale modes | Chromatic, major, minor, custom |
 | Audio-thread allocations / locks | None (tested) |
-| Format | VST3, Windows x64 |
+| Format | VST3 (Windows x64, macOS universal), AU (macOS universal) |
 
 ## Build from Source
 
@@ -102,6 +105,8 @@ scripts/setup-xwin-aliases.sh
 scripts/build.sh      # -> build/win-release/LyraTune_artefacts/Release/VST3/Lyra Tune.vst3
 scripts/test.sh       # native unit tests
 ```
+
+macOS builds run on GitHub Actions (`.github/workflows/macos.yml`): universal VST3 + AU, ad-hoc signed, validated with auval and pluginval. On a Mac: `cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" && cmake --build build/mac`.
 
 ## Documentation
 

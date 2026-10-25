@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(LyraTune VERSION 0.6.6 LANGUAGES C CXX)
+project(LyraTune VERSION 0.6.7 LANGUAGES C CXX)
 
 # Product naming lives here only; DSP code never refers to it.
 set(PRODUCT_NAME "Lyra Tune" CACHE STRING "User-visible plugin name")
@@ -18,7 +18,7 @@ juce_add_plugin(LyraTune
     PLUGIN_MANUFACTURER_CODE Lyra
     PLUGIN_CODE LyTn
     PRODUCT_NAME "${PRODUCT_NAME}"
-    FORMATS VST3
+    FORMATS VST3 AU          # AU is built on macOS only; JUCE skips it elsewhere
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     VST3_CATEGORIES Fx Pitch Shift
