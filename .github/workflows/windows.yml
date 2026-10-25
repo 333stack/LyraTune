@@ -28,7 +28,10 @@ jobs:
       - name: Install LLVM, Ninja, xwin
         run: |
           sudo apt-get update -q
-          sudo apt-get install -yq ninja-build zip
+          # ninja + zip for the build; the rest is what JUCE's native juceaide helper needs on Linux
+          sudo apt-get install -yq ninja-build zip pkg-config libfreetype-dev libfontconfig1-dev \
+            libasound2-dev libcurl4-openssl-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev
           curl -sSfL -o llvm.sh https://apt.llvm.org/llvm.sh
           sudo bash llvm.sh "$LLVM_VERSION"
           sudo apt-get install -yq "lld-$LLVM_VERSION" "llvm-$LLVM_VERSION"
