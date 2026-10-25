@@ -60,7 +60,13 @@ Get the zip for your system from the [Releases](https://github.com/333stack/Lyra
 - **Windows:** unzip and copy the `Lyra Tune.vst3` folder to `C:\Program Files\Common Files\VST3\`, then rescan plugins in your DAW (FL Studio, Ableton Live, Reaper, Studio One, Cubase, Bitwig…).
 - **Linux (Windows DAW under Wine):** copy it to the same folder inside the DAW's Wine prefix:
   `<prefix>/drive_c/Program Files/Common Files/VST3/`.
-- **macOS 11+ (Apple Silicon and Intel):** copy `Lyra Tune.vst3` to `~/Library/Audio/Plug-Ins/VST3/` and/or `Lyra Tune.component` (Audio Unit, for Logic Pro and GarageBand) to `~/Library/Audio/Plug-Ins/Components/`. The build is not notarized, so allow it once with `xattr -dr com.apple.quarantine <plugin>` or in System Settings → Privacy & Security. The macOS build passes automated validation (pluginval, auval) but has not yet been tested in a DAW on real hardware.
+- **macOS 11+ (Apple Silicon and Intel):**
+  1. Copy `Lyra Tune.component` (Audio Unit) to `/Library/Audio/Plug-Ins/Components/`.
+  2. Copy `Lyra Tune.vst3` to `/Library/Audio/Plug-Ins/VST3/`.
+  3. The build is not notarized by Apple, so macOS blocks it the first time (*"Apple could not verify… is free of malware"*). Open **System Settings → Privacy & Security**, scroll down and click **Allow Anyway** (*Open Anyway* on some macOS versions) — once for the **VST3** and once for the **component**.
+  4. Restart your DAW and rescan plugins. In **FL Studio**, add Lyra Tune to an effect slot in the **Mixer**.
+
+  Alternative to step 3, in Terminal: `xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/"Lyra Tune.vst3" /Library/Audio/Plug-Ins/Components/"Lyra Tune.component"`. The macOS build passes automated validation (pluginval, auval) and has been confirmed working in FL Studio.
 
 Formats: VST3 (Windows x64, macOS universal), Audio Unit (macOS universal). Verify downloads with `SHA256SUMS.txt`.
 
@@ -106,7 +112,7 @@ scripts/build.sh      # -> build/win-release/LyraTune_artefacts/Release/VST3/Lyr
 scripts/test.sh       # native unit tests
 ```
 
-macOS builds run on GitHub Actions (`.github/workflows/macos.yml`): universal VST3 + AU, ad-hoc signed, validated with auval and pluginval. On a Mac: `cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" && cmake --build build/mac`.
+Every push to `main` builds both platforms on GitHub Actions: `.github/workflows/macos.yml` (universal VST3 + AU, ad-hoc signed, validated with auval and pluginval) and `.github/workflows/windows.yml` (x64 VST3 with clang-cl, validated with pluginval). The zips are attached to each run as artifacts. On a Mac: `cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" && cmake --build build/mac`.
 
 ## Documentation
 

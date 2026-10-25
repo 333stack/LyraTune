@@ -1,10 +1,12 @@
 # macOS build: universal (arm64 + x86_64) VST3 + AU, ad-hoc signed, validated with pluginval.
-# Run from the Actions tab (or `gh workflow run macos.yml`); the zip is uploaded as a build artifact.
+# Runs on every push to main and on version tags (also manually: `gh workflow run macos.yml`);
+# the zip is uploaded as a build artifact. windows.yml builds the Windows version alongside it.
 name: macOS build
 
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     tags: ["v*"]
 
 jobs:

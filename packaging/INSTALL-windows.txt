@@ -1,0 +1,15 @@
+Lyra Tune 0.6.7 - VST3, Windows x64
+
+Install:
+  Copy the "Lyra Tune.vst3" folder to  C:\Program Files\Common Files\VST3\
+  then rescan plugins in your DAW.
+
+Linux with a Windows DAW under Wine:
+  Copy it to the same folder inside the DAW's Wine prefix:
+  <prefix>/drive_c/Program Files/Common Files/VST3/
+
+Added latency: 3.6 ms (Range High), 5.3 ms (Mid), 7.4 ms (Low) at 48 kHz, +2 ms with HQ on; reported to the host.
+Documentation: LyraTune.md in the source repository.
+
+Lead design and engineering: stack
+License: GNU AGPL v3 (LICENSE). Third-party notices: THIRD_PARTY_NOTICES.md, licenses/.
