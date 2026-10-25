@@ -112,7 +112,7 @@ scripts/build.sh      # -> build/win-release/LyraTune_artefacts/Release/VST3/Lyr
 scripts/test.sh       # native unit tests
 ```
 
-Every push to `main` builds both platforms on GitHub Actions: `.github/workflows/macos.yml` (universal VST3 + AU, ad-hoc signed, validated with auval and pluginval) and `.github/workflows/windows.yml` (x64 VST3 with clang-cl, validated with pluginval). The zips are attached to each run as artifacts. On a Mac: `cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" && cmake --build build/mac`.
+Every push to `main` builds both platforms on GitHub Actions: `.github/workflows/macos.yml` (universal VST3 + AU, ad-hoc signed, validated with auval and pluginval) and `.github/workflows/windows.yml` (x64 VST3 cross-compiled on Linux with clang-cl + xwin exactly like `scripts/build.sh`, then validated with pluginval on Windows). The zips are attached to each run as artifacts. On a Mac: `cmake -S . -B build/mac -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" && cmake --build build/mac`.
 
 ## Documentation
 

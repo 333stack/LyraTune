@@ -1,4 +1,6 @@
-# Windows build: x64 VST3 with clang-cl (as the local xwin cross-build), validated with pluginval.
+# Windows build: x64 VST3 cross-compiled on Linux with clang-cl + lld-link + xwin, exactly like
+# scripts/build.sh (the GitHub Windows image's bundled clang 19 is too old for JUCE's libwebp SSE code),
+# then validated with pluginval on a real Windows runner.
 # Runs on every push to main and on version tags (also manually: `gh workflow run windows.yml`);
 # the zip is uploaded as a build artifact. macos.yml builds the Mac version alongside it.
 name: Windows build
@@ -9,48 +11,66 @@ on:
     branches: [main]
     tags: ["v*"]
 
+env:
+  LLVM_VERSION: "22"
+  XWIN_VERSION: "0.10.0"
+  XWIN_SHA256: "d870eb4b2f390878af6da1ccd3cf321d22fcb72720984853b4be732ae597fc88"
+  PLUGINVAL_VERSION: v1.0.4
+
 jobs:
-  windows:
-    runs-on: windows-2022
-    env:
-      PLUGINVAL_VERSION: v1.0.4
-    defaults:
-      run:
-        shell: bash
+  build:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
+      - name: Install LLVM, Ninja, xwin
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq ninja-build zip
+          curl -sSfL -o llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh "$LLVM_VERSION"
+          sudo apt-get install -yq "lld-$LLVM_VERSION" "llvm-$LLVM_VERSION"
+          # the toolchain file calls the unversioned names
+          mkdir -p "$HOME/bin"
+          for t in clang-cl lld-link llvm-lib llvm-rc llvm-mt; do
+            src=$(command -v "$t-$LLVM_VERSION" || echo "/usr/lib/llvm-$LLVM_VERSION/bin/$t")
+            test -x "$src"
+            ln -sf "$src" "$HOME/bin/$t"
+          done
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          curl -sSfL -o xwin.tgz \
+            "https://github.com/Jake-Shadle/xwin/releases/download/$XWIN_VERSION/xwin-$XWIN_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          echo "$XWIN_SHA256  xwin.tgz" | sha256sum -c
+          tar xzf xwin.tgz --strip-components=1 -C "$HOME/bin" "xwin-$XWIN_VERSION-x86_64-unknown-linux-musl/xwin"
+          "$HOME/bin/clang-cl" --version | head -1
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/share/xwin
+          key: xwin-${{ env.XWIN_VERSION }}-x86_64-v1
+
+      - name: Windows SDK + CRT (xwin)
+        run: |
+          [ -d ~/.local/share/xwin/sdk ] || xwin --accept-license --arch x86_64 --cache-dir ~/.cache/xwin \
+            splat --output ~/.local/share/xwin
+          scripts/setup-xwin-aliases.sh > /dev/null
+
       - name: Build plugin
-        run: |
-          cmake -S . -B build/win -G "Visual Studio 17 2022" -A x64 -T ClangCL
-          cmake --build build/win --config Release -j3 --target LyraTune_VST3
-
-      - name: Check binary
-        run: |
-          B="build/win/LyraTune_artefacts/Release/VST3/Lyra Tune.vst3/Contents/x86_64-win/Lyra Tune.vst3"
-          test -f "$B"
-          file "$B" || true
-
-      - name: Validate (pluginval)
-        run: |
-          curl -sSfL -o pluginval.zip \
-            "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_VERSION/pluginval_Windows.zip"
-          unzip -q pluginval.zip
-          ./pluginval.exe --strictness-level 5 --validate-in-process --timeout-ms 600000 \
-            --validate "build/win/LyraTune_artefacts/Release/VST3/Lyra Tune.vst3"
+        run: JOBS=4 scripts/build.sh Release
 
       - name: Package
         run: |
           V=$(sed -n 's/^project(LyraTune VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          B="build/win-release/LyraTune_artefacts/Release/VST3/Lyra Tune.vst3"
+          file "$B/Contents/x86_64-win/Lyra Tune.vst3"
           P=pkg
           mkdir -p $P
-          cp -R "build/win/LyraTune_artefacts/Release/VST3/Lyra Tune.vst3" $P/
-          rm -f "$P/Lyra Tune.vst3/Contents/Resources/moduleinfo.json"
+          cp -R "$B" $P/
           cp -R LICENSE THIRD_PARTY_NOTICES.md licenses $P/
           cp packaging/INSTALL-windows.txt $P/INSTALL.txt
-          (cd $P && 7z a -tzip -r "../LyraTune-$V-win-x64-vst3.zip" . > /dev/null)
+          (cd $P && zip -qr "../LyraTune-$V-win-x64-vst3.zip" .)
           sha256sum "LyraTune-$V-win-x64-vst3.zip"
           echo "ZIP=LyraTune-$V-win-x64-vst3.zip" >> "$GITHUB_ENV"
 
@@ -59,3 +79,23 @@ jobs:
           name: lyratune-windows
           path: ${{ env.ZIP }}
           if-no-files-found: error
+
+  validate:
+    needs: build
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: lyratune-windows
+
+      - name: Validate (pluginval)
+        run: |
+          unzip -q LyraTune-*-win-x64-vst3.zip -d pkg
+          curl -sSfL -o pluginval.zip \
+            "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_VERSION/pluginval_Windows.zip"
+          unzip -q pluginval.zip
+          ./pluginval.exe --strictness-level 5 --validate-in-process --timeout-ms 600000 \
+            --validate "pkg/Lyra Tune.vst3"
